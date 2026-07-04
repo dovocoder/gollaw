@@ -1,0 +1,12 @@
+# Binary
+gollaw
+*.exe
+
+# Test artifacts
+/tmp/
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
