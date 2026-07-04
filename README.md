@@ -4,8 +4,9 @@
 
 Gollaw analyzes an entire Go codebase using the compiler's own semantic model
 (`go/packages`, `go/types`, `go/ssa`, `go/ast`) to surface dead code, unused
-exports, complexity hotspots, duplication, dependency cycles, and architecture
-violations — all from a single tool with JSON output designed for AI agents.
+exports, complexity hotspots, duplication, dependency cycles, security issues,
+naming violations, and architecture violations — all from a single tool with
+JSON output designed for AI agents.
 
 ## Quick start
 
@@ -35,6 +36,14 @@ gollaw analyze ./... --rule "internal/store must not import internal/api"
 | `duplication` | Duplicate code blocks (AST-based clone detection) |
 | `dependencies` | Import cycles and dependency hygiene |
 | `architecture` | Architecture boundary violations |
+| `unused-deps` | go.mod dependencies that are never imported |
+| `large-functions` | Functions exceeding a line-count threshold |
+| `hotspots` | Files with high complexity density (maintenance risk areas) |
+| `security` | Hardcoded secrets, TODO/FIXME comments, unsafe usage, SQL injection |
+| `naming` | Go naming convention violations (snake_case, ALL_CAPS, initialisms) |
+| `unused-files` | Go files not part of any loaded package |
+| `thin-wrappers` | Functions that just delegate to a single call |
+| `churn` | Files with high git churn (frequent changes = maintenance hotspots) |
 
 ## Output formats
 

@@ -1,0 +1,182 @@
+package analyzer
+
+import (
+	"fmt"
+	"go/ast"
+	"go/token"
+	"sort"
+	"strings"
+	"unicode"
+)
+
+// namingAnalyzer checks Go naming conventions — inspired by Fallow's
+// convention checks. Flags exported names that use snake_case or
+// inconsistent casing, and unexported names that look like they should
+// be exported (e.g. all-caps acronyms).
+type namingAnalyzer struct{}
+
+func newNamingAnalyzer() *namingAnalyzer { return &namingAnalyzer{} }
+
+func (a *namingAnalyzer) Name() string        { return "naming" }
+func (a *namingAnalyzer) Category() Category  { return CategoryCodeSmell }
+func (a *namingAnalyzer) Description() string { return "Go naming convention violations" }
+
+func (a *namingAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
+	var findings []Finding
+
+	for _, files := range ctx.SyntaxByPkg {
+		for _, file := range files {
+			// Check function names.
+			for _, decl := range file.Decls {
+				switch d := decl.(type) {
+				case *ast.FuncDecl:
+					name := d.Name.Name
+					pos := ctx.FSET.Position(d.Name.Pos())
+					findings = append(findings, checkName("function", name, pos, d.Name.IsExported())...)
+				case *ast.GenDecl:
+					for _, spec := range d.Specs {
+						switch s := spec.(type) {
+						case *ast.TypeSpec:
+							pos := ctx.FSET.Position(s.Name.Pos())
+							findings = append(findings, checkName("type", s.Name.Name, pos, s.Name.IsExported())...)
+						case *ast.ValueSpec:
+							for _, name := range s.Names {
+								pos := ctx.FSET.Position(name.Pos())
+								kind := "variable"
+								if d.Tok.String() == "const" {
+									kind = "constant"
+								}
+								findings = append(findings, checkName(kind, name.Name, pos, name.IsExported())...)
+							}
+						}
+					}
+				}
+			}
+
+			// Check import aliases for unnecessary aliases.
+			for _, imp := range file.Imports {
+				if imp.Name == nil {
+					continue
+				}
+				alias := imp.Name.Name
+				path := strings.Trim(imp.Path.Value, `"`)
+				pkgName := lastSegment(path)
+				if alias == pkgName {
+					pos := ctx.FSET.Position(imp.Pos())
+					findings = append(findings, Finding{
+						Analyzer:  a.Name(),
+						Category:  a.Category(),
+						Severity:  SeverityHint,
+						Message:    fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
+						File:       pos.Filename,
+						Line:       pos.Line,
+						RuleID:     "GLW-NM003",
+						Suggestion: "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
+					})
+				}
+			}
+		}
+	}
+
+	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].File != findings[j].File {
+			return findings[i].File < findings[j].File
+		}
+		return findings[i].Line < findings[j].Line
+	})
+
+	return findings, nil
+}
+
+func checkName(kind, name string, pos token.Position, exported bool) []Finding {
+	var findings []Finding
+
+	// Check for snake_case in Go (should be camelCase or PascalCase).
+	if strings.Contains(name, "_") && !strings.HasPrefix(name, "_") {
+		// Allow _test suffix for test doubles.
+		if !strings.HasSuffix(name, "_test") && !strings.HasSuffix(name, "_mock") {
+			findings = append(findings, Finding{
+				Analyzer:  "naming",
+				Category:  CategoryCodeSmell,
+				Severity:  SeverityHint,
+				Message:    fmt.Sprintf("%s %q uses snake_case — Go convention is camelCase/PascalCase", kind, name),
+				File:       pos.Filename,
+				Line:       pos.Line,
+				RuleID:     "GLW-NM001",
+				Suggestion: fmt.Sprintf("Rename to %s (remove underscores, capitalize each word).", toCamelCase(name)),
+			})
+		}
+	}
+
+	// Check for ALL_CAPS (should only be for constants, but even then
+	// Go convention is MixedCase).
+	if exported && isAllCaps(name) {
+		findings = append(findings, Finding{
+			Analyzer:  "naming",
+			Category:  CategoryCodeSmell,
+			Severity:  SeverityHint,
+			Message:    fmt.Sprintf("%s %q is ALL_CAPS — Go convention is PascalCase for exported names", kind, name),
+			File:       pos.Filename,
+			Line:       pos.Line,
+			RuleID:     "GLW-NM002",
+			Suggestion: fmt.Sprintf("Rename to %s (PascalCase, not ALL_CAPS).", toPascalCase(name)),
+		})
+	}
+
+	// Check for initialism casing (ID, URL, HTTP, etc. should be uppercase
+	// in exported names: e.g. ParseURL not ParseUrl).
+	if exported {
+		for _, bad := range []string{"Url", "Id", "Http", "Https", "Sql", "Json", "Xml", "Html", "Ssl", "Tcp", "Udp", "Ip", "Api"} {
+			if strings.Contains(name, bad) {
+				findings = append(findings, Finding{
+					Analyzer:  "naming",
+					Category:  CategoryCodeSmell,
+					Severity:  SeverityHint,
+					Message:    fmt.Sprintf("%s %q contains non-standard initialism %q — Go convention is uppercase (e.g. %s)", kind, name, bad, strings.ReplaceAll(name, bad, strings.ToUpper(bad))),
+					File:       pos.Filename,
+					Line:       pos.Line,
+					RuleID:     "GLW-NM004",
+					Suggestion: fmt.Sprintf("Rename to %s (use uppercase initialism).", strings.ReplaceAll(name, bad, strings.ToUpper(bad))),
+				})
+			}
+		}
+	}
+
+	return findings
+}
+
+func isAllCaps(s string) bool {
+	for _, r := range s {
+		if r == '_' {
+			continue
+		}
+		if !unicode.IsUpper(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func toCamelCase(s string) string {
+	parts := strings.Split(s, "_")
+	result := parts[0]
+	for _, p := range parts[1:] {
+		if len(p) > 0 {
+			result += strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return result
+}
+
+func toPascalCase(s string) string {
+	cc := toCamelCase(s)
+	if len(cc) > 0 {
+		return strings.ToUpper(cc[:1]) + cc[1:]
+	}
+	return cc
+}
+
+func lastSegment(s string) string {
+	parts := strings.Split(s, "/")
+	return parts[len(parts)-1]
+}
