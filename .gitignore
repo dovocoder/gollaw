@@ -10,3 +10,4 @@ gollaw
 .idea/
 .vscode/
 *.swp
+.gollaw/
