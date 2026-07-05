@@ -35,7 +35,7 @@ func (a *securityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		{"AWS access key", regexp.MustCompile(`AKIA[0-9A-Z]{16}`), "GLW-SC004"},
 		{"private key", regexp.MustCompile(`-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----`), "GLW-SC005"},
 	}
-	todoPattern := regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX|BUG)\b[:\s]`)
+	todoPattern := regexp.MustCompile(`\b(TODO|FIXME|HACK|XXX|BUG)\b[:\s]`)
 
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {

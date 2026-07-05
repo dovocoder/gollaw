@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -14,7 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
 	"github.com/dovocoder/gollaw/internal/audit"
@@ -25,6 +23,7 @@ import (
 	"github.com/dovocoder/gollaw/internal/explain"
 	"github.com/dovocoder/gollaw/internal/filescore"
 	"github.com/dovocoder/gollaw/internal/guard"
+	"github.com/dovocoder/gollaw/internal/jsonrpc"
 	"github.com/dovocoder/gollaw/internal/loader"
 	"github.com/dovocoder/gollaw/internal/publicapi"
 	"github.com/dovocoder/gollaw/internal/reporter"
@@ -41,8 +40,7 @@ const mcpVersion = "0.2.0"
 // ServeMCP runs the MCP server loop over the given reader/writer (typically stdio).
 func ServeMCP(in io.Reader, out io.Writer) error {
 	s := &server{
-		reader: bufio.NewReader(in),
-		writer: out,
+		conn: jsonrpc.NewConn(in, out),
 	}
 	return s.run()
 }
@@ -50,9 +48,7 @@ func ServeMCP(in io.Reader, out io.Writer) error {
 // ─── Server struct ─────────────────────────────────────────────────────
 
 type server struct {
-	reader  *bufio.Reader
-	writer  io.Writer
-	writeMu sync.Mutex
+	conn *jsonrpc.Conn
 }
 
 // ─── JSON-RPC types ────────────────────────────────────────────────────
@@ -153,61 +149,18 @@ func (s *server) run() error {
 
 // ─── Message framing ───────────────────────────────────────────────────
 
-func (s *server) readMessage() ([]byte, error) {
-	contentLength := 0
-	for {
-		line, err := s.reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		if strings.HasPrefix(line, "Content-Length:") {
-			fmt.Sscanf(line, "Content-Length: %d", &contentLength)
-		}
-	}
-	if contentLength == 0 {
-		return nil, fmt.Errorf("missing Content-Length header")
-	}
-	buf := make([]byte, contentLength)
-	_, err := io.ReadFull(s.reader, buf)
-	return buf, err
-}
-
-func (s *server) writeMessage(data []byte) error {
-	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(data))
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if _, err := s.writer.Write([]byte(header)); err != nil {
-		return err
-	}
-	_, err := s.writer.Write(data)
-	return err
-}
-
+// ─── JSON-RPC delegation ───────────────────────────────────────────────
+//gollaw:keep
+func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
+//gollaw:keep
+func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
+//gollaw:keep
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
-	resp := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      json.RawMessage(id),
-		"result":  result,
-	}
-	data, _ := json.Marshal(resp)
-	s.writeMessage(data)
+	s.conn.SendResponse(id, result)
 }
-
+//gollaw:keep
 func (s *server) sendError(id json.RawMessage, code int, message string) {
-	resp := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      json.RawMessage(id),
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-		},
-	}
-	data, _ := json.Marshal(resp)
-	s.writeMessage(data)
+	s.conn.SendError(id, code, message)
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────
@@ -298,8 +251,9 @@ func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
 	if len(p.Patterns) == 0 {
 		p.Patterns = []string{"./..."}
 	}
+	dir := p.Dir
 
-	ctx, findings, err := loadAndAnalyze(p.Dir, p.Patterns)
+	ctx, findings, err := loadAndAnalyze(dir, p.Patterns)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -308,7 +262,7 @@ func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
 
 	// Build a report.
 	stats := reporter.CodebaseStats{}
-	result, _ := loader.Load(loader.LoadConfig{Patterns: p.Patterns, Dir: p.Dir})
+	result, _ := loader.Load(loader.LoadConfig{Patterns: p.Patterns, Dir: dir})
 	if result != nil {
 		stats = reporter.CodebaseStats{
 			Packages:  result.Stats.PackageCount,
@@ -354,8 +308,9 @@ func (s *server) toolExplain(id json.RawMessage, args json.RawMessage) {
 		s.sendError(id, -32602, "symbol is required")
 		return
 	}
+	dir := p.Dir
 
-	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
+	ctx, _, err := loadAndAnalyze(dir, []string{"./..."})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -388,8 +343,9 @@ func (s *server) toolTrace(id json.RawMessage, args json.RawMessage) {
 	if p.Direction == "" {
 		p.Direction = "callers"
 	}
+	dir := p.Dir
 
-	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
+	ctx, _, err := loadAndAnalyze(dir, []string{"./..."})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -414,16 +370,10 @@ func (s *server) toolTrace(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -443,24 +393,14 @@ func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
 // ─── New tool handlers ─────────────────────────────────────────────────
 
 func (s *server) toolAudit(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir     string `json:"dir"`
-		BaseRef string `json:"base_ref"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
-	if p.BaseRef == "" {
-		p.BaseRef = "origin/main"
-	}
+	dir, baseRef := parseDirBaseRefArgs(args)
 
-	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	ctx, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
-	auditRep, err := audit.RunAudit(ctx, p.BaseRef, findings, p.Dir)
+	auditRep, err := audit.RunAudit(ctx, baseRef, findings, dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -482,6 +422,7 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 		s.sendError(id, -32602, "file_path is required")
 		return
 	}
+	dir := p.Dir
 
 	// Parse architecture rules.
 	var archRules []analyzer.Rule
@@ -497,7 +438,7 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 
 	// Load config rules if no explicit rules were given.
 	if len(archRules) == 0 {
-		configPath := config.FindConfig(p.Dir)
+		configPath := config.FindConfig(dir)
 		if configPath != "" {
 			if fc, err := config.Load(configPath); err == nil {
 				for _, r := range fc.Rules {
@@ -513,7 +454,7 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 		}
 	}
 
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -540,27 +481,21 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolBaselineSave(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
-	if err := baseline.Save(p.Dir, findings); err != nil {
+	if err := baseline.Save(dir, findings); err != nil {
 		s.sendToolError(id, err)
 		return
 	}
 
 	data, _ := json.MarshalIndent(map[string]interface{}{
 		"savedFindings": len(findings),
-		"path":          filepath.Join(p.Dir, ".gollaw", "baseline.json"),
+		"path":          filepath.Join(dir, ".gollaw", "baseline.json"),
 	}, "", "  ")
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: string(data)}},
@@ -568,20 +503,14 @@ func (s *server) toolBaselineSave(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolBaselineDiff(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
-	bl, err := baseline.Load(p.Dir)
+	bl, err := baseline.Load(dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -600,14 +529,9 @@ func (s *server) toolBaselineDiff(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolPublicAPI(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
+	ctx, _, err := loadAndAnalyze(dir, []string{"./..."})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -623,14 +547,9 @@ func (s *server) toolPublicAPI(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolCoverage(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
+	ctx, _, err := loadAndAnalyze(dir, []string{"./..."})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -646,16 +565,10 @@ func (s *server) toolCoverage(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolFileScores(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -664,16 +577,10 @@ func (s *server) toolFileScores(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolXRef(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -682,50 +589,30 @@ func (s *server) toolXRef(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolDupes(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
-
-	findings, err := runAnalyzersByName(p.Dir, []string{"duplication"})
-	if err != nil {
-		s.sendToolError(id, err)
-		return
-	}
-
-	s.sendToolJSON(id, findings)
+	s.runSingleAnalyzer(id, args, "duplication")
 }
 
 func (s *server) toolSecurity(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	s.runSingleAnalyzer(id, args, "security")
+}
 
-	findings, err := runAnalyzersByName(p.Dir, []string{"security"})
+// runSingleAnalyzer is a shared helper for tool handlers that run a single
+// analyzer by name and return its findings.
+func (s *server) runSingleAnalyzer(id json.RawMessage, args json.RawMessage, name string) {
+	dir := parseDirArgs(args)
+	findings, err := runAnalyzersByName(dir, []string{name})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
 	}
-
 	s.sendToolJSON(id, findings)
 }
 
 func (s *server) toolImpact(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -761,10 +648,10 @@ func (s *server) toolInspect(id json.RawMessage, args json.RawMessage) {
 		s.sendError(id, -32602, "target is required")
 		return
 	}
+	dir := p.Dir
 
-	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	ctx, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -874,16 +761,11 @@ func (s *server) inspectSymbol(ctx *analyzer.Context, findings []analyzer.Findin
 }
 
 func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
 	// Load config for rules.
 	var archRules []analyzer.Rule
-	configPath := config.FindConfig(p.Dir)
+	configPath := config.FindConfig(dir)
 	if configPath != "" {
 		if fc, err := config.Load(configPath); err == nil {
 			for _, r := range fc.Rules {
@@ -898,7 +780,7 @@ func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
 		}
 	}
 
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -948,24 +830,19 @@ func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
 		s.sendToolError(id, err)
 		return
 	}
 
 	// Parse go.mod for module name and Go version.
-	moduleName, goVersion := parseGoMod(p.Dir)
+	moduleName, goVersion := parseGoMod(dir)
 
 	// Count unique dependencies from go.mod.
-	depCount := countGoModDeps(p.Dir)
+	depCount := countGoModDeps(dir)
 
 	info := map[string]interface{}{
 		"moduleName":    moduleName,
@@ -982,25 +859,15 @@ func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir     string `json:"dir"`
-		BaseRef string `json:"base_ref"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
-	if p.BaseRef == "" {
-		p.BaseRef = "origin/main"
-	}
+	dir, baseRef := parseDirBaseRefArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
 	// Get changed files via git.
-	changedFiles, err := getChangedFiles(p.BaseRef, p.Dir)
+	changedFiles, err := getChangedFiles(baseRef, dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -1010,7 +877,7 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 	changedSet := make(map[string]bool)
 	for _, f := range changedFiles {
 		changedSet[f] = true
-		abs, _ := filepath.Abs(filepath.Join(p.Dir, f))
+		abs, _ := filepath.Abs(filepath.Join(dir, f))
 		changedSet[abs] = true
 		changedSet[filepath.Base(f)] = true
 	}
@@ -1023,7 +890,7 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 	}
 
 	data, _ := json.MarshalIndent(map[string]interface{}{
-		"baseRef":         p.BaseRef,
+		"baseRef":         baseRef,
 		"changedFiles":    changedFiles,
 		"changedFileCount": len(changedFiles),
 		"findings":        changedFindings,
@@ -1035,16 +902,10 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolSuppress(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	ctx, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -1071,20 +932,14 @@ func (s *server) toolSuppress(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolOwners(id json.RawMessage, args json.RawMessage) {
-	var p struct {
-		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	dir := parseDirArgs(args)
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
-	ownersFile, err := codeowners.FindCodeOwnersFile(p.Dir)
+	ownersFile, err := codeowners.FindCodeOwnersFile(dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -1108,10 +963,10 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 	if len(args) > 0 {
 		json.Unmarshal(args, &p)
 	}
+	dir := p.Dir
 
-	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
-	if err != nil {
-		s.sendToolError(id, err)
+	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
+	if !ok {
 		return
 	}
 
@@ -1144,16 +999,76 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 // sendToolError sends an error response for a tool call.
+//gollaw:keep
 func (s *server) sendToolError(id json.RawMessage, err error) {
-	s.sendToolError(id, err)
+	s.sendResponse(id, callToolResult{
+		Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
+		IsError: true,
+	})
 }
 
 // sendToolJSON sends a JSON response for a tool call.
+//gollaw:keep
 func (s *server) sendToolJSON(id json.RawMessage, v interface{}) {
-	s.sendToolJSON(id, v)
+	data, _ := json.MarshalIndent(v, "", "  ")
+	s.sendResponse(id, callToolResult{
+		Content: []contentBlock{{Type: "text", Text: string(data)}},
+	})
 }
 
-// loadAndalyze loads the codebase and runs all analyzers.
+// loadAndAnalyzeOrError loads the codebase, runs all analyzers, and returns
+// the context and findings. On error, sends the error to the client and
+// returns nil. This eliminates the repeated load+error pattern across tool handlers.
+func (s *server) loadAndAnalyzeOrError(id json.RawMessage, dir string) (*analyzer.Context, []analyzer.Finding, bool) {
+	ctx, findings, err := loadAndAnalyze(dir, []string{"./..."})
+	if err != nil {
+		s.sendToolError(id, err)
+		return nil, nil, false
+	}
+	return ctx, findings, true
+}
+
+// parseDirArgs extracts the "dir" field from tool call arguments.
+// Returns empty string if no dir field or empty args.
+func parseDirArgs(args json.RawMessage) string {
+	var p struct {
+		Dir string `json:"dir"`
+	}
+	if len(args) > 0 {
+		json.Unmarshal(args, &p)
+	}
+	return p.Dir
+}
+
+// parsePathArgs extracts "dir" and "path" fields from tool call arguments.
+func parsePathArgs(args json.RawMessage) (dir, path string) {
+	var p struct {
+		Dir  string `json:"dir"`
+		Path string `json:"path"`
+	}
+	if len(args) > 0 {
+		json.Unmarshal(args, &p)
+	}
+	return p.Dir, p.Path
+}
+
+// parseDirBaseRefArgs extracts "dir" and "base_ref" fields, defaulting base_ref
+// to "origin/main" when empty.
+func parseDirBaseRefArgs(args json.RawMessage) (dir, baseRef string) {
+	var p struct {
+		Dir     string `json:"dir"`
+		BaseRef string `json:"base_ref"`
+	}
+	if len(args) > 0 {
+		json.Unmarshal(args, &p)
+	}
+	if p.BaseRef == "" {
+		p.BaseRef = "origin/main"
+	}
+	return p.Dir, p.BaseRef
+}
+
+// loadAndAnalyze loads the codebase and runs all analyzers.
 // Returns the analyzer context (for explain/trace) and all findings.
 func loadAndAnalyze(dir string, patterns []string) (*analyzer.Context, []analyzer.Finding, error) {
 	if len(patterns) == 0 {

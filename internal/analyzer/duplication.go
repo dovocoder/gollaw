@@ -12,7 +12,6 @@ import (
 
 // dupBlock is a code block with its structural hash.
 type dupBlock struct {
-	hash    string
 	file    string
 	line    int
 	endLine int
@@ -62,7 +61,6 @@ func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[stri
 				start := ctx.FSET.Position(fn.Body.Pos())
 				end := ctx.FSET.Position(fn.Body.End())
 				b := dupBlock{
-					hash:    bodyHash,
 					file:    start.Filename,
 					line:    start.Line,
 					endLine: end.Line,
@@ -247,7 +245,6 @@ func collectStatementRuns(fset *token.FileSet, fn *ast.FuncDecl, minLines int, b
 
 		h := hashStatements(run)
 		blocksByHash[h] = append(blocksByHash[h], dupBlock{
-			hash:    h,
 			file:    start.Filename,
 			line:    start.Line,
 			endLine: end.Line,

@@ -4,7 +4,6 @@
 package lsp
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,16 +13,16 @@ import (
 	"time"
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
+	"github.com/dovocoder/gollaw/internal/jsonrpc"
 	"github.com/dovocoder/gollaw/internal/loader"
 )
 
 // ServeLSP runs the LSP server loop over the given reader/writer (typically stdio).
 func ServeLSP(in io.Reader, out io.Writer) error {
 	s := &server{
-		reader: bufio.NewReader(in),
-		writer: out,
-		docs:   make(map[string]*document),
-		logger: log.New(io.Discard, "", 0), // suppress by default
+		conn:     jsonrpc.NewConn(in, out),
+		docs:     make(map[string]*document),
+		logger:   log.New(io.Discard, "", 0), // suppress by default
 	}
 	return s.run()
 }
@@ -31,9 +30,7 @@ func ServeLSP(in io.Reader, out io.Writer) error {
 // ─── Server struct ─────────────────────────────────────────────────────
 
 type server struct {
-	reader   *bufio.Reader
-	writer   io.Writer
-	writeMu  sync.Mutex
+	conn     *jsonrpc.Conn
 	docs     map[string]*document
 	rootPath string
 	timer    *time.Timer
@@ -42,7 +39,6 @@ type server struct {
 }
 
 type document struct {
-	uri     string
 	text    string
 	version int
 }
@@ -187,71 +183,18 @@ func (s *server) run() error {
 	}
 }
 
-// ─── Message framing (Content-Length headers) ──────────────────────────
-
-func (s *server) readMessage() ([]byte, error) {
-	contentLength := 0
-	for {
-		line, err := s.reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break // end of headers
-		}
-		if strings.HasPrefix(line, "Content-Length:") {
-			fmt.Sscanf(line, "Content-Length: %d", &contentLength)
-		}
-	}
-	if contentLength == 0 {
-		return nil, fmt.Errorf("missing Content-Length header")
-	}
-	buf := make([]byte, contentLength)
-	_, err := io.ReadFull(s.reader, buf)
-	return buf, err
-}
-
-func (s *server) writeMessage(data []byte) error {
-	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(data))
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if _, err := s.writer.Write([]byte(header)); err != nil {
-		return err
-	}
-	_, err := s.writer.Write(data)
-	return err
-}
-
+// ─── JSON-RPC delegation ───────────────────────────────────────────────
+//gollaw:keep
+func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
+//gollaw:keep
+func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
+//gollaw:keep
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
-	resp := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      json.RawMessage(id),
-	}
-	if result != nil {
-		resp["result"] = result
-	} else {
-		resp["result"] = nil
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		s.logger.Printf("marshal response error: %v", err)
-		return
-	}
-	s.writeMessage(data)
+	s.conn.SendResponse(id, result)
 }
-
+//gollaw:keep
 func (s *server) sendError(id json.RawMessage, code int, message string) {
-	resp := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      json.RawMessage(id),
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-		},
-	}
-	data, _ := json.Marshal(resp)
-	s.writeMessage(data)
+	s.conn.SendError(id, code, message)
 }
 
 func (s *server) sendNotification(method string, params interface{}) {
@@ -302,7 +245,6 @@ func (s *server) handleDidOpen(params json.RawMessage) {
 		return
 	}
 	s.docs[p.TextDocument.URI] = &document{
-		uri:     p.TextDocument.URI,
 		text:    p.TextDocument.Text,
 		version: p.TextDocument.Version,
 	}
@@ -318,7 +260,7 @@ func (s *server) handleDidChange(params json.RawMessage) {
 	doc, ok := s.docs[p.TextDocument.URI]
 	if !ok {
 		// Document not open; create it.
-		doc = &document{uri: p.TextDocument.URI}
+		doc = &document{}
 		s.docs[p.TextDocument.URI] = doc
 	}
 	doc.version = p.TextDocument.Version

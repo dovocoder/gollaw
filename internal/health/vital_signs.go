@@ -5,6 +5,7 @@ package health
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +125,20 @@ func ComputeVitalSigns(
 		}
 	}
 
-	score := 100 - penalty
+	// Normalize penalty relative to codebase size and apply diminishing returns.
+	// A fixed penalty of 2 per info finding destroys the score for large codebases
+	// with many minor findings. Instead, we scale by function count and use a
+	// square-root curve so the marginal penalty decreases as findings accumulate.
+	functionCount := stats.Functions
+	if functionCount == 0 {
+		functionCount = 1
+	}
+	// Scale factor: findings per 100 functions (so small codebases aren't over-penalized).
+	findingsPer100 := float64(penalty) * 100.0 / float64(functionCount)
+	// Diminishing returns: sqrt scaling.
+	scaledPenalty := int(math.Sqrt(findingsPer100) * 10)
+
+	score := 100 - scaledPenalty
 	if score < 0 {
 		score = 0
 	}

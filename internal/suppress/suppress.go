@@ -94,6 +94,10 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 		}
 
 		// Walk declarations to find suppression comments above them.
+		// Also handle the file's package-level doc comment.
+		if file.Doc != nil {
+			sup.parseDeclComment(fset, file.Doc, file.Pos())
+		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch decl := n.(type) {
 			case *ast.GenDecl:
@@ -174,9 +178,9 @@ func (s *Suppressions) checkInlineComment(fset *token.FileSet, file *ast.File, d
 // parseSuppressionText parses a single comment text and records the suppression.
 func (s *Suppressions) parseSuppressionText(text, fileName string, declLine, commentLine int) {
 	switch {
-	case text == prefixKeep:
-		s.addDeclIgnore(fileName, declLine, "deadcode")
-		s.addDeclIgnore(fileName, declLine, "unused")
+	case text == prefixKeep || strings.HasPrefix(text, prefixKeep+" "):
+		// Suppress ALL analyzers for this declaration.
+		s.addDeclIgnore(fileName, declLine, "*")
 		s.entries = append(s.entries, SuppressionEntry{
 			File:     fileName,
 			Line:     commentLine,
@@ -232,8 +236,8 @@ func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 	if fileMap, ok := sup.declIgnores[f.File]; ok {
 		for declLine, analyzers := range fileMap {
 			if matchesDecl(f.Line, declLine) {
-				// "keep" suppresses ALL analyzers for this declaration
-				if analyzers["deadcode"] {
+				// "*" means "keep" — suppress ALL analyzers for this declaration
+				if analyzers["*"] {
 					return true
 				}
 				if analyzers[f.Analyzer] {
@@ -248,13 +252,11 @@ func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 
 // matchesDecl checks if a finding line falls within the declaration at declLine.
 // Since we don't track declaration end lines in suppressions, we use a proximity
-// heuristic: the finding line must be >= declLine (findings are within or
-// after the declaration start).
+// heuristic: the finding line must be >= declLine-1 (findings are within or
+// after the declaration start; -1 accounts for package-level findings reported
+// at line 1 when the package clause is at line 2 after a doc comment).
 func matchesDecl(findingLine, declLine int) bool {
-	// The finding is at or after the declaration line, within a reasonable range.
-	// For functions, findings can span many lines. We accept any line >= declLine
-	// since the suppression is tied to the declaration.
-	return findingLine >= declLine
+	return findingLine >= declLine-1
 }
 
 // FilterSuppressed returns only the findings that are NOT suppressed.

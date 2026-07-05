@@ -32,6 +32,10 @@ func (a *unusedMembersAnalyzer) checkUnusedFields(ctx *Context) []Finding {
 		}
 		for _, sel := range pkg.TypesInfo.Selections {
 			recv := sel.Recv()
+			// Unwrap pointer receivers: r.field where r is *T gives recv=*T
+			if ptr, ok := recv.(*types.Pointer); ok {
+				recv = ptr.Elem()
+			}
 			if named, ok := recv.(*types.Named); ok {
 				if named.Obj() == nil || named.Obj().Pkg() == nil {
 					continue
