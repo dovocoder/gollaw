@@ -13,27 +13,24 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// AuditReport is the complete PR audit result.
-//gollaw:keep
-type AuditReport struct {
+// auditReport is the complete PR audit result.
+type auditReport struct {
 	BaseRef      string        `json:"baseRef"`
 	ChangedFiles []string     `json:"changedFiles"`
-	Findings     []AuditFinding `json:"findings"`
+	Findings     []auditFinding `json:"findings"`
 	Verdict      string        `json:"verdict"`
-	Summary      AuditSummary  `json:"summary"`
+	Summary      auditSummary  `json:"summary"`
 }
 
-// AuditFinding wraps an analyzer.Finding with PR attribution.
-//gollaw:keep
-type AuditFinding struct {
+// auditFinding wraps an analyzer.Finding with PR attribution.
+type auditFinding struct {
 	analyzer.Finding
 	Status      string `json:"status"`       // "introduced" or "pre-existing"
 	FileChanged bool   `json:"fileChanged"`
 }
 
-// AuditSummary breaks down audit findings.
-//gollaw:keep
-type AuditSummary struct {
+// auditSummary breaks down audit findings.
+type auditSummary struct {
 	Introduced int            `json:"introduced"`
 	PreExisting int           `json:"preExisting"`
 	Total       int            `json:"total"`
@@ -41,7 +38,7 @@ type AuditSummary struct {
 }
 
 // RunAudit runs a PR audit against the given base ref.
-func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Finding, dir string) (*AuditReport, error) {
+func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Finding, dir string) (*auditReport, error) {
 	changedFiles, err := GetChangedFiles(baseRef, dir)
 	if err != nil {
 		return nil, fmt.Errorf("get changed files: %w", err)
@@ -54,8 +51,8 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 		changedSet[f] = true
 	}
 
-	var auditFindings []AuditFinding
-	summary := AuditSummary{BySeverity: make(map[string]int)}
+	var auditFindings []auditFinding
+	summary := auditSummary{BySeverity: make(map[string]int)}
 
 	for _, f := range allFindings {
 		isChanged := changedSet[f.File] || changedSet[filepath.Base(f.File)]
@@ -69,7 +66,7 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 		summary.Total++
 		summary.BySeverity[string(f.Severity)]++
 
-		auditFindings = append(auditFindings, AuditFinding{
+		auditFindings = append(auditFindings, auditFinding{
 			Finding:     f,
 			Status:      status,
 			FileChanged: isChanged,
@@ -98,7 +95,7 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 		}
 	}
 
-	return &AuditReport{
+	return &auditReport{
 		BaseRef:      baseRef,
 		ChangedFiles: changedFiles,
 		Findings:     auditFindings,
@@ -140,7 +137,7 @@ func severityRank(s analyzer.Severity) int {
 }
 
 // FormatAuditText formats the audit report as human-readable text.
-func FormatAuditText(report *AuditReport) string {
+func FormatAuditText(report *auditReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Gollaw Audit — base: %s\n", report.BaseRef)
 	fmt.Fprintf(&b, "Changed files: %d\n\n", len(report.ChangedFiles))

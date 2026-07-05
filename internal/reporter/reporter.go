@@ -34,7 +34,7 @@ type CodebaseStats struct {
 }
 
 // Summary breaks down findings by severity and analyzer.
-//gollaw:keep
+//gollaw:ignore api-surface
 type Summary struct {
 	Total           int                    `json:"total"`
 	BySeverity      map[string]int         `json:"bySeverity"`
@@ -43,7 +43,7 @@ type Summary struct {
 }
 
 // HealthScore is a 0-100 score derived from findings.
-//gollaw:keep
+//gollaw:ignore api-surface
 type HealthScore struct {
 	Score     int                `json:"score"`
 	Grade     string             `json:"grade"`
@@ -348,7 +348,7 @@ type codeClimateReporter struct{}
 func (r *codeClimateReporter) Format() string { return "codeclimate" }
 
 func (r *codeClimateReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatCodeClimate(report)
+	data, err := formatCodeClimate(report)
 	if err != nil {
 		return err
 	}
@@ -363,7 +363,7 @@ type compactReporter struct{}
 func (r *compactReporter) Format() string { return "compact" }
 
 func (r *compactReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatCompact(report)
+	data, err := formatCompact(report)
 	if err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ type groupedReporter struct{}
 func (r *groupedReporter) Format() string { return "grouped" }
 
 func (r *groupedReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatGrouped(report)
+	data, err := formatGrouped(report)
 	if err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ type prDecisionReporter struct{}
 func (r *prDecisionReporter) Format() string { return "pr-decision" }
 
 func (r *prDecisionReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatPRDecision(report)
+	data, err := formatPRDecision(report)
 	if err != nil {
 		return err
 	}
@@ -423,7 +423,7 @@ type prSummaryReporter struct{}
 func (r *prSummaryReporter) Format() string { return "pr-summary" }
 
 func (r *prSummaryReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatPRSummary(report)
+	data, err := formatPRSummary(report)
 	if err != nil {
 		return err
 	}
@@ -438,7 +438,7 @@ type impactReporter struct{}
 func (r *impactReporter) Format() string { return "impact" }
 
 func (r *impactReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatImpact(report)
+	data, err := formatImpact(report)
 	if err != nil {
 		return err
 	}
@@ -453,7 +453,7 @@ type nextStepsReporter struct{}
 func (r *nextStepsReporter) Format() string { return "next-steps" }
 
 func (r *nextStepsReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatNextSteps(report)
+	data, err := formatNextSteps(report)
 	if err != nil {
 		return err
 	}

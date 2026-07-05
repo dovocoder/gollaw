@@ -54,9 +54,7 @@ type Analyzer interface {
 
 // registry holds all available analyzers.
 type registry struct {
-	//gollaw:keep
 	analyzers []Analyzer
-	//gollaw:keep
 	byName map[string]Analyzer
 }
 

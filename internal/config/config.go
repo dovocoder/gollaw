@@ -10,42 +10,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigFile is the YAML representation of .gollaw.yaml.
-//gollaw:keep
-type ConfigFile struct {
-	Analyzers  AnalyzersConfig  `yaml:"analyzers"`
-	Thresholds ThresholdsConfig `yaml:"thresholds"`
+// configFile is the YAML representation of .gollaw.yaml.
+type configFile struct {
+	Analyzers  analyzersConfig  `yaml:"analyzers"`
+	Thresholds thresholdsConfig `yaml:"thresholds"`
 	Rules      []string         `yaml:"rules"`
 	Ignore     []string         `yaml:"ignore"`
-	Severity   SeverityConfig   `yaml:"severity"`
+	Severity   severityConfig   `yaml:"severity"`
 }
 
-// AnalyzersConfig holds enabled/disabled analyzer lists.
-//gollaw:keep
-type AnalyzersConfig struct {
+// analyzersConfig holds enabled/disabled analyzer lists.
+type analyzersConfig struct {
 	Enabled  []string `yaml:"enabled"`
 	Disabled []string `yaml:"disabled"`
 }
 
-// ThresholdsConfig holds complexity and duplication thresholds.
-//gollaw:keep
-type ThresholdsConfig struct {
+// thresholdsConfig holds complexity and duplication thresholds.
+type thresholdsConfig struct {
 	MaxCyclomatic    int `yaml:"max-cyclomatic"`
 	MaxCognitive     int `yaml:"max-cognitive"`
 	MaxFunctionLines int `yaml:"max-function-lines"`
 	MinDupLines      int `yaml:"min-dup-lines"`
 }
 
-// SeverityConfig holds the minimum severity filter.
-//gollaw:keep
-type SeverityConfig struct {
+// severityConfig holds the minimum severity filter.
+type severityConfig struct {
 	Min string `yaml:"min"`
 }
 
 // Config is the resolved configuration combining file settings and ignore patterns.
+//gollaw:ignore api-surface
 type Config struct {
-	Analyzers      AnalyzersConfig
-	Thresholds     ThresholdsConfig
+	Analyzers      analyzersConfig
+	Thresholds     thresholdsConfig
 	Rules          []string
 	IgnorePatterns []string
 	MinSeverity    analyzer.Severity
@@ -56,14 +53,14 @@ type Config struct {
 const configFileName = ".gollaw.yaml"
 
 // Default returns a Config with sensible default values.
-//gollaw:keep
+//gollaw:ignore api-surface
 func Default() *Config {
 	return &Config{
-		Analyzers: AnalyzersConfig{
+		Analyzers: analyzersConfig{
 			Enabled:  nil, // nil = all analyzers
 			Disabled: nil,
 		},
-		Thresholds: ThresholdsConfig{
+		Thresholds: thresholdsConfig{
 			MaxCyclomatic:    15,
 			MaxCognitive:     20,
 			MaxFunctionLines: 50,
@@ -117,7 +114,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
-	var cf ConfigFile
+	var cf configFile
 	if err := yaml.Unmarshal(data, &cf); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
@@ -129,7 +126,7 @@ func Load(path string) (*Config, error) {
 
 // fromConfigFile converts the YAML representation into a Config, applying
 // defaults for any zero-value fields.
-func fromConfigFile(cf ConfigFile) *Config {
+func fromConfigFile(cf configFile) *Config {
 	d := Default()
 
 	if len(cf.Analyzers.Enabled) > 0 {

@@ -78,7 +78,6 @@ func detectThinWrapper(stmts []ast.Stmt) (string, bool) {
 }
 
 // detectSingleStmtWrapper checks a single statement for a wrapping call.
-//gollaw:keep
 func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
@@ -96,7 +95,6 @@ func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 }
 
 // detectCallPlusReturnWrapper checks a 2-statement body: call + return.
-//gollaw:keep
 func detectCallPlusReturnWrapper(stmts []ast.Stmt) (string, bool) {
 	exprStmt, ok := stmts[0].(*ast.ExprStmt)
 	if !ok {
@@ -132,7 +130,6 @@ func (a *thinWrapperAnalyzer) createThinWrapperFinding(ctx *Context, fn *ast.Fun
 	}
 }
 
-//gollaw:keep
 func callExprName(call *ast.CallExpr) string {
 	switch fun := call.Fun.(type) {
 	case *ast.Ident:
@@ -146,7 +143,6 @@ func callExprName(call *ast.CallExpr) string {
 	return "unknown"
 }
 
-//gollaw:keep
 func isIdent(expr ast.Expr) bool {
 	_, ok := expr.(*ast.Ident)
 	return ok

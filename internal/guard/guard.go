@@ -13,19 +13,17 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// GuardReport is the result of checking a file against architecture rules.
-//gollaw:keep
-type GuardReport struct {
+// guardReport is the result of checking a file against architecture rules.
+type guardReport struct {
 	FilePath        string            `json:"filePath"`
 	Exists          bool             `json:"exists"`
 	Zone            string           `json:"zone"`
-	ApplicableRules []GuardRule      `json:"applicableRules"`
+	ApplicableRules []guardRule      `json:"applicableRules"`
 	Violations      []analyzer.Finding `json:"violations"`
 }
 
-// GuardRule wraps an analyzer.Rule with display metadata.
-//gollaw:keep
-type GuardRule struct {
+// guardRule wraps an analyzer.Rule with display metadata.
+type guardRule struct {
 	Rule        analyzer.Rule `json:"rule"`
 	Severity    string        `json:"severity"`
 	Description string        `json:"description"`
@@ -34,8 +32,8 @@ type GuardRule struct {
 // BuildGuardReport inspects a file path and determines which architecture
 // rules apply to the file's package and whether the package currently
 // violates any of those rules.
-func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath string) (*GuardReport, error) {
-	report := &GuardReport{
+func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath string) (*guardReport, error) {
+	report := &guardReport{
 		FilePath: filePath,
 	}
 
@@ -54,7 +52,7 @@ func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath str
 	if pkgPath == "" {
 		// Could not find the package — still list all rules for awareness.
 		for _, rule := range rules {
-			report.ApplicableRules = append(report.ApplicableRules, GuardRule{
+			report.ApplicableRules = append(report.ApplicableRules, guardRule{
 				Rule:        rule,
 				Severity:    string(analyzer.SeverityCritical),
 				Description: describeRule(rule),
@@ -66,7 +64,7 @@ func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath str
 	// Find applicable rules: those mentioning this package as source or target.
 	for _, rule := range rules {
 		if ruleAppliesToPkg(rule, pkgPath) {
-			report.ApplicableRules = append(report.ApplicableRules, GuardRule{
+			report.ApplicableRules = append(report.ApplicableRules, guardRule{
 				Rule:        rule,
 				Severity:    string(analyzer.SeverityCritical),
 				Description: describeRule(rule),
@@ -81,7 +79,7 @@ func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath str
 }
 
 // FormatGuardText produces a human-readable guard report.
-func FormatGuardText(report *GuardReport) string {
+func FormatGuardText(report *guardReport) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Guard Report for %s\n", report.FilePath)
@@ -128,7 +126,8 @@ func FormatGuardText(report *GuardReport) string {
 }
 
 // FormatGuardJSON produces a JSON guard report.
-func FormatGuardJSON(report *GuardReport) ([]byte, error) {
+//gollaw:ignore thin-wrappers
+func FormatGuardJSON(report *guardReport) ([]byte, error) {
 	return json.MarshalIndent(report, "", "  ")
 }
 
@@ -172,6 +171,7 @@ func ruleAppliesToPkg(rule analyzer.Rule, pkgPath string) bool {
 }
 
 // describeRule produces a human-readable description of a rule.
+//gollaw:ignore thin-wrappers
 func describeRule(rule analyzer.Rule) string {
 	return fmt.Sprintf("package %q must not import %q", rule.Package, rule.MustNotUse)
 }

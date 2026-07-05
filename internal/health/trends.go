@@ -10,19 +10,17 @@ import (
 	"time"
 )
 
-// TrendPoint is a single snapshot in time.
-//gollaw:keep
-type TrendPoint struct {
+// trendPoint is a single snapshot in time.
+type trendPoint struct {
 	Timestamp    string `json:"timestamp"`
 	Score        int    `json:"score"`
 	Grade        string `json:"grade"`
 	FindingsCount int   `json:"findingsCount"`
 }
 
-// TrendResult holds the trend data across multiple snapshots.
-//gollaw:keep
-type TrendResult struct {
-	Points    []TrendPoint `json:"points"`
+// trendResult holds the trend data across multiple snapshots.
+type trendResult struct {
+	Points    []trendPoint `json:"points"`
 	Direction string       `json:"direction"` // improving, declining, stable
 	Delta     int          `json:"delta"`      // score change since first snapshot
 }
@@ -42,7 +40,7 @@ const (
 
 // SaveSnapshot saves a vital signs snapshot to .gollaw/snapshots/YYYY-MM-DD-HHMMSS.json
 // under the given project directory.
-func SaveSnapshot(dir string, vs *VitalSigns) error {
+func SaveSnapshot(dir string, vs *vitalSigns) error {
 	snapDir := filepath.Join(dir, ".gollaw", snapshotsDir)
 	if err := os.MkdirAll(snapDir, 0o755); err != nil {
 		return fmt.Errorf("create snapshots directory: %w", err)
@@ -89,18 +87,18 @@ func formatSnapshotFileName(rfc3339 string) string {
 
 // LoadTrends loads all snapshots from the given project directory, sorts them
 // by timestamp, and computes the trend direction and delta.
-func LoadTrends(dir string) (*TrendResult, error) {
+func LoadTrends(dir string) (*trendResult, error) {
 	snapDir := filepath.Join(dir, ".gollaw", snapshotsDir)
 
 	entries, err := os.ReadDir(snapDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &TrendResult{Points: []TrendPoint{}, Direction: "stable"}, nil
+			return &trendResult{Points: []trendPoint{}, Direction: "stable"}, nil
 		}
 		return nil, fmt.Errorf("read snapshots directory: %w", err)
 	}
 
-	var points []TrendPoint
+	var points []trendPoint
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -117,7 +115,7 @@ func LoadTrends(dir string) (*TrendResult, error) {
 			continue // skip malformed files
 		}
 
-		points = append(points, TrendPoint{
+		points = append(points, trendPoint{
 			Timestamp:    data.Timestamp,
 			Score:        data.Score,
 			Grade:        data.Grade,
@@ -130,7 +128,7 @@ func LoadTrends(dir string) (*TrendResult, error) {
 		return points[i].Timestamp < points[j].Timestamp
 	})
 
-	result := &TrendResult{
+	result := &trendResult{
 		Points: points,
 	}
 
@@ -153,7 +151,7 @@ func LoadTrends(dir string) (*TrendResult, error) {
 }
 
 // FormatTrendsText formats the trend result as a text report with an ASCII sparkline chart.
-func FormatTrendsText(result *TrendResult) string {
+func FormatTrendsText(result *trendResult) string {
 	var b strings.Builder
 
 	b.WriteString("─── Health Trend ───\n\n")
@@ -189,13 +187,14 @@ func FormatTrendsText(result *TrendResult) string {
 }
 
 // FormatTrendsJSON formats the trend result as indented JSON.
-func FormatTrendsJSON(result *TrendResult) ([]byte, error) {
+//gollaw:ignore thin-wrappers
+func FormatTrendsJSON(result *trendResult) ([]byte, error) {
 	return json.MarshalIndent(result, "", "  ")
 }
 
 // sparkline generates an ASCII sparkline from trend points.
 // Uses block characters to represent score values 0-100.
-func sparkline(points []TrendPoint) string {
+func sparkline(points []trendPoint) string {
 	if len(points) == 0 {
 		return ""
 	}

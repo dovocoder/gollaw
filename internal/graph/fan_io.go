@@ -1,12 +1,10 @@
 package graph
 
-import "sort"
-
 // fanIOStats holds fan-in/fan-out metrics for a single package.
 type fanIOStats struct {
-	Package       string
-	FanIn         int
-	FanOut        int
+	Package        string
+	FanIn          int
+	FanOut         int
 	IsHighCoupling bool
 }
 
@@ -45,41 +43,4 @@ func computeFanIOWithThresholds(graph *ModuleGraph, t fanIOThresholds) []fanIOSt
 		})
 	}
 	return stats
-}
-
-// fanIORanking returns the top-10 most imported packages and top-10 importers.
-//gollaw:keep
-func fanIORanking(graph *ModuleGraph) *fanIORankingResult {
-	ranking := &fanIORankingResult{}
-	if graph == nil {
-		return ranking
-	}
-
-	all := computeFanIOWithThresholds(graph, defaultFanIOThresholds)
-
-	// Sort by fan-in (most imported first).
-	sortedByIn := make([]fanIOStats, len(all))
-	copy(sortedByIn, all)
-	sort.Slice(sortedByIn, func(i, j int) bool {
-		return sortedByIn[i].FanIn > sortedByIn[j].FanIn
-	})
-	limit := 10
-	if len(sortedByIn) < limit {
-		limit = len(sortedByIn)
-	}
-	ranking.TopImported = sortedByIn[:limit]
-
-	// Sort by fan-out (most importers first).
-	sortedByOut := make([]fanIOStats, len(all))
-	copy(sortedByOut, all)
-	sort.Slice(sortedByOut, func(i, j int) bool {
-		return sortedByOut[i].FanOut > sortedByOut[j].FanOut
-	})
-	limit = 10
-	if len(sortedByOut) < limit {
-		limit = len(sortedByOut)
-	}
-	ranking.TopImporters = sortedByOut[:limit]
-
-	return ranking
 }

@@ -11,19 +11,17 @@ import (
 	"github.com/dovocoder/gollaw/internal/loader"
 )
 
-// FixReport summarises a fix run.
-//gollaw:keep
-type FixReport struct {
+// fixReport summarises a fix run.
+type fixReport struct {
 	Analyzer   string      `json:"analyzer"`
 	TotalFixes int         `json:"totalFixes"`
 	Applied    int         `json:"applied"`
 	Skipped    int         `json:"skipped"`
-	Changes    []FixChange `json:"changes"`
+	Changes    []fixChange `json:"changes"`
 }
 
-// FixChange represents a single suggested or applied fix.
-//gollaw:keep
-type FixChange struct {
+// fixChange represents a single suggested or applied fix.
+type fixChange struct {
 	File        string `json:"file"`
 	Line        int    `json:"line"`
 	Kind        string `json:"kind"` // remove, unexport, remove-import, add-suppression
@@ -35,7 +33,7 @@ type FixChange struct {
 // RunFix analyses the codebase and produces (and optionally applies) fixes
 // for the given analyzer's findings. If analyzerName is empty, all analyzers
 // are considered. When dryRun is true, changes are listed but not applied.
-func RunFix(dir string, analyzerName string, dryRun bool) (*FixReport, error) {
+func RunFix(dir string, analyzerName string, dryRun bool) (*fixReport, error) {
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
 		return nil, fmt.Errorf("load codebase: %w", err)
@@ -71,12 +69,12 @@ func RunFix(dir string, analyzerName string, dryRun bool) (*FixReport, error) {
 		allFindings = append(allFindings, findings...)
 	}
 
-	report := &FixReport{
+	report := &fixReport{
 		Analyzer:   analyzerName,
 		TotalFixes: 0,
 		Applied:    0,
 		Skipped:    0,
-		Changes:    []FixChange{},
+		Changes:    []fixChange{},
 	}
 
 	for _, f := range allFindings {
@@ -107,10 +105,10 @@ func RunFix(dir string, analyzerName string, dryRun bool) (*FixReport, error) {
 }
 
 // generateFixes produces fix suggestions for a single finding.
-func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []FixChange {
+func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []fixChange {
 	switch f.Analyzer {
 	case "deadcode":
-		return []FixChange{{
+		return []fixChange{{
 			File:        f.File,
 			Line:        f.Line,
 			Kind:        "remove",
@@ -119,7 +117,7 @@ func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []FixChange {
 			NewText:     "",
 		}}
 	case "unused-deps":
-		return []FixChange{{
+		return []fixChange{{
 			File:        f.File,
 			Line:        f.Line,
 			Kind:        "remove-import",
@@ -130,7 +128,7 @@ func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []FixChange {
 		if suggestion == "" {
 			suggestion = toCamelCase(f.Message)
 		}
-		return []FixChange{{
+		return []fixChange{{
 			File:        f.File,
 			Line:        f.Line,
 			Kind:        "unexport",
@@ -141,7 +139,7 @@ func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []FixChange {
 	default:
 		// For other analyzers, suggest adding a suppression comment as a safe fix.
 		if f.Severity == analyzer.SeverityCritical || f.Severity == analyzer.SeverityWarning {
-			return []FixChange{{
+			return []fixChange{{
 				File:        f.File,
 				Line:        f.Line,
 				Kind:        "add-suppression",
@@ -154,7 +152,7 @@ func generateFixes(ctx *analyzer.Context, f analyzer.Finding) []FixChange {
 }
 
 // applyChange writes a fix change to the filesystem.
-func applyChange(dir string, ch FixChange) error {
+func applyChange(dir string, ch fixChange) error {
 	filePath := ch.File
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(dir, filePath)
@@ -276,7 +274,7 @@ func extractSymbolName(message string) string {
 }
 
 // FormatFixText renders a fix report as human-readable text.
-func FormatFixText(report *FixReport) string {
+func FormatFixText(report *fixReport) string {
 	var b strings.Builder
 
 	mode := "DRY RUN"

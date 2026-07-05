@@ -180,7 +180,6 @@ func appendUniqueInt(slice []int, v int) []int {
 	return append(slice, v)
 }
 
-//gollaw:keep
 func appendUniqueString(slice []string, v string) []string {
 	for _, existing := range slice {
 		if existing == v {

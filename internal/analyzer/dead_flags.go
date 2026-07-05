@@ -152,7 +152,6 @@ func (a *deadFlagsAnalyzer) scanFlagRegistrations(ctx *Context, file *ast.File) 
 }
 
 // isFlagTypeMethod returns true for flag registration method names.
-//gollaw:keep
 func isFlagTypeMethod(name string) bool {
 	switch name {
 	case "Bool", "String", "Int", "Float64", "Duration":

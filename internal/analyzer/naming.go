@@ -142,7 +142,6 @@ func checkName(kind, name string, pos token.Position, exported bool) []Finding {
 }
 
 // checkSnakeCase flags names containing underscores (excluding _test/_mock).
-//gollaw:keep
 func checkSnakeCase(kind, name string, pos token.Position) []Finding {
 	if !strings.Contains(name, "_") || strings.HasPrefix(name, "_") {
 		return nil
@@ -164,7 +163,6 @@ func checkSnakeCase(kind, name string, pos token.Position) []Finding {
 }
 
 // checkAllCaps flags exported ALL_CAPS names.
-//gollaw:keep
 func checkAllCaps(kind, name string, pos token.Position) []Finding {
 	if !isAllCaps(name) {
 		return nil
@@ -182,7 +180,6 @@ func checkAllCaps(kind, name string, pos token.Position) []Finding {
 }
 
 // checkInitialisms flags non-standard initialism casing (Url → URL, Id → ID, etc.).
-//gollaw:keep
 func checkInitialisms(kind, name string, pos token.Position) []Finding {
 	var findings []Finding
 	for _, bad := range nonStandardInitialisms {
@@ -204,7 +201,6 @@ func checkInitialisms(kind, name string, pos token.Position) []Finding {
 	return findings
 }
 
-//gollaw:keep
 func isAllCaps(s string) bool {
 	for _, r := range s {
 		if r == '_' {
@@ -217,7 +213,6 @@ func isAllCaps(s string) bool {
 	return true
 }
 
-//gollaw:keep
 func toCamelCase(s string) string {
 	parts := strings.Split(s, "_")
 	result := parts[0]
@@ -229,7 +224,6 @@ func toCamelCase(s string) string {
 	return result
 }
 
-//gollaw:keep
 func toPascalCase(s string) string {
 	cc := toCamelCase(s)
 	if len(cc) > 0 {

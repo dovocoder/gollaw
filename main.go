@@ -6,7 +6,7 @@ import (
 	"github.com/dovocoder/gollaw/internal/cli"
 )
 
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func main() {
 	os.Exit(cli.Run(os.Args[1:]))
 }

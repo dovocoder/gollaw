@@ -151,15 +151,15 @@ func (s *server) run() error {
 // ─── Message framing ───────────────────────────────────────────────────
 
 // ─── JSON-RPC delegation ───────────────────────────────────────────────
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
 	s.conn.SendResponse(id, result)
 }
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func (s *server) sendError(id json.RawMessage, code int, message string) {
 	s.conn.SendError(id, code, message)
 }
@@ -228,13 +228,10 @@ func (s *server) handleToolsCall(id json.RawMessage, params json.RawMessage) {
 // ─── Tool handlers ─────────────────────────────────────────────────────
 
 func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
-	var p struct {
+	p := parseArgs[struct {
 		Dir      string   `json:"dir"`
 		Patterns []string `json:"patterns"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	}](args)
 	if len(p.Patterns) == 0 {
 		p.Patterns = []string{"./..."}
 	}
@@ -397,14 +394,11 @@ func (s *server) toolAudit(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
-	var p struct {
+	p := parseArgs[struct {
 		FilePath string   `json:"file_path"`
 		Dir      string   `json:"dir"`
 		Rules    []string `json:"rules"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	}](args)
 	if p.FilePath == "" {
 		s.sendError(id, -32602, "file_path is required")
 		return
@@ -579,10 +573,12 @@ func (s *server) toolXRef(id json.RawMessage, args json.RawMessage) {
 	s.sendToolJSON(id, combined)
 }
 
+//gollaw:ignore thin-wrappers
 func (s *server) toolDupes(id json.RawMessage, args json.RawMessage) {
 	s.runSingleAnalyzer(id, args, "duplication")
 }
 
+//gollaw:ignore thin-wrappers
 func (s *server) toolSecurity(id json.RawMessage, args json.RawMessage) {
 	s.runSingleAnalyzer(id, args, "security")
 }
@@ -628,13 +624,10 @@ func (s *server) toolImpact(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolInspect(id json.RawMessage, args json.RawMessage) {
-	var p struct {
+	p := parseArgs[struct {
 		Target string `json:"target"`
 		Dir    string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	}](args)
 	if p.Target == "" {
 		s.sendError(id, -32602, "target is required")
 		return
@@ -965,13 +958,10 @@ func (s *server) toolOwners(id json.RawMessage, args json.RawMessage) {
 }
 
 func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
-	var p struct {
+	p := parseArgs[struct {
 		Dir      string `json:"dir"`
 		Analyzer string `json:"analyzer"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	}](args)
 	dir := p.Dir
 
 	_, findings, ok := s.loadAndAnalyzeOrError(id, dir)
@@ -1008,7 +998,7 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 // sendToolError sends an error response for a tool call.
-//gollaw:keep
+//gollaw:ignore thin-wrappers
 func (s *server) sendToolError(id json.RawMessage, err error) {
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
@@ -1017,7 +1007,6 @@ func (s *server) sendToolError(id json.RawMessage, err error) {
 }
 
 // sendToolJSON sends a JSON response for a tool call.
-//gollaw:keep
 func (s *server) sendToolJSON(id json.RawMessage, v interface{}) {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	s.sendResponse(id, callToolResult{
@@ -1037,40 +1026,31 @@ func (s *server) loadAndAnalyzeOrError(id json.RawMessage, dir string) (*analyze
 	return ctx, findings, true
 }
 
+// parseArgs unmarshals JSON args into the given struct, tolerating empty args.
+// This eliminates the repeated "if len(args) > 0 { json.Unmarshal(args, &p) }" pattern.
+func parseArgs[T any](args json.RawMessage) T {
+	var p T
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &p)
+	}
+	return p
+}
+
 // parseDirArgs extracts the "dir" field from tool call arguments.
 // Returns empty string if no dir field or empty args.
 func parseDirArgs(args json.RawMessage) string {
-	var p struct {
+	return parseArgs[struct {
 		Dir string `json:"dir"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
-	return p.Dir
-}
-
-// parsePathArgs extracts "dir" and "path" fields from tool call arguments.
-func parsePathArgs(args json.RawMessage) (dir, path string) {
-	var p struct {
-		Dir  string `json:"dir"`
-		Path string `json:"path"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
-	return p.Dir, p.Path
+	}](args).Dir
 }
 
 // parseDirBaseRefArgs extracts "dir" and "base_ref" fields, defaulting base_ref
 // to "origin/main" when empty.
 func parseDirBaseRefArgs(args json.RawMessage) (dir, baseRef string) {
-	var p struct {
+	p := parseArgs[struct {
 		Dir     string `json:"dir"`
 		BaseRef string `json:"base_ref"`
-	}
-	if len(args) > 0 {
-		json.Unmarshal(args, &p)
-	}
+	}](args)
 	if p.BaseRef == "" {
 		p.BaseRef = "origin/main"
 	}

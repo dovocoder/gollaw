@@ -11,9 +11,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// ExportInfo describes a single exported identifier.
-//gollaw:keep
-type ExportInfo struct {
+// exportInfo describes a single exported identifier.
+type exportInfo struct {
 	Name   string   `json:"name"`
 	Kind   string   `json:"kind"` // function, type, const, var
 	Package string  `json:"package"`
@@ -22,18 +21,17 @@ type ExportInfo struct {
 	UsedBy []string `json:"usedBy"`
 }
 
-// APIReport summarises the public API surface of the codebase.
-//gollaw:keep
-type APIReport struct {
+// apiReport summarises the public API surface of the codebase.
+type apiReport struct {
 	TotalExports      int          `json:"totalExports"`
-	ConfirmedPublic   []ExportInfo `json:"confirmedPublic"`
-	AccidentalExports []ExportInfo `json:"accidentalExports"`
-	UnusedExports     []ExportInfo `json:"unusedExports"`
+	ConfirmedPublic   []exportInfo `json:"confirmedPublic"`
+	AccidentalExports []exportInfo `json:"accidentalExports"`
+	UnusedExports     []exportInfo `json:"unusedExports"`
 }
 
 // AnalyzePublicAPI inspects every loaded package, collects exported identifiers,
 // and classifies them as confirmed public API, accidental exports, or unused.
-func AnalyzePublicAPI(ctx *analyzer.Context) (*APIReport, error) {
+func AnalyzePublicAPI(ctx *analyzer.Context) (*apiReport, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("nil analyzer context")
 	}
@@ -65,7 +63,7 @@ func AnalyzePublicAPI(ctx *analyzer.Context) (*APIReport, error) {
 	// package than the one that defines the export.
 	scanUses(ctx.Packages, entries)
 
-	report := &APIReport{
+	report := &apiReport{
 		TotalExports: len(entries),
 	}
 
@@ -75,7 +73,7 @@ func AnalyzePublicAPI(ctx *analyzer.Context) (*APIReport, error) {
 	ownPkgUsage := buildOwnPackageUsageSet(ctx)
 
 	for key, e := range entries {
-		info := ExportInfo{
+		info := exportInfo{
 			Name:    e.obj.Name(),
 			Kind:    kindOfObject(e.obj),
 			Package: e.pkgPath,
@@ -148,11 +146,8 @@ func scanUses(pkgs []*packages.Package, entries map[string]*exportEntry) {
 }
 
 type exportEntry struct {
-	//gollaw:keep
 	obj     types.Object
-	//gollaw:keep
 	pkgPath string
-	//gollaw:keep
 	usedBy  map[string]bool
 }
 
@@ -181,7 +176,7 @@ func buildOwnPackageUsageSet(ctx *analyzer.Context) map[string]bool {
 }
 
 // FormatPublicAPIText renders the API report as a human-readable text table.
-func FormatPublicAPIText(report *APIReport) string {
+func FormatPublicAPIText(report *apiReport) string {
 	if report == nil {
 		return ""
 	}
@@ -228,7 +223,7 @@ func FormatPublicAPIText(report *APIReport) string {
 }
 
 // FormatPublicAPIJSON renders the API report as JSON.
-func FormatPublicAPIJSON(report *APIReport) ([]byte, error) {
+func FormatPublicAPIJSON(report *apiReport) ([]byte, error) {
 	if report == nil {
 		return []byte("null"), nil
 	}

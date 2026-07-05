@@ -8,9 +8,8 @@ import (
 	"text/tabwriter"
 )
 
-// ImpactReport is a comprehensive impact analysis for a set of changed files.
-//gollaw:keep
-type ImpactReport struct {
+// impactReport is a comprehensive impact analysis for a set of changed files.
+type impactReport struct {
 	ChangedPackages   []string
 	AffectedPackages  []string
 	TotalBlastRadius  int
@@ -20,8 +19,8 @@ type ImpactReport struct {
 }
 
 // BuildImpactReport builds a full impact report for the given changed files.
-func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport {
-	report := &ImpactReport{}
+func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *impactReport {
+	report := &impactReport{}
 
 	if graph == nil {
 		return report
@@ -71,7 +70,7 @@ func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport 
 	}
 
 	// Partition layer of the changed packages.
-	layers := PartitionOrder(graph)
+	layers := partitionOrder(graph)
 	for i, layer := range layers {
 		for _, pkg := range layer {
 			if changedPkgs[pkg] {
@@ -85,7 +84,7 @@ func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport 
 }
 
 // FormatImpactText formats the impact report as a human-readable string.
-func FormatImpactText(report *ImpactReport) string {
+func FormatImpactText(report *impactReport) string {
 	if report == nil {
 		return ""
 	}
@@ -140,7 +139,7 @@ func FormatImpactText(report *ImpactReport) string {
 }
 
 // FormatImpactJSON formats the impact report as JSON.
-func FormatImpactJSON(report *ImpactReport) ([]byte, error) {
+func FormatImpactJSON(report *impactReport) ([]byte, error) {
 	if report == nil {
 		return []byte("null"), nil
 	}

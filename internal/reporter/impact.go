@@ -5,9 +5,8 @@ import (
 	"fmt"
 )
 
-// ImpactReport is a per-category and per-severity issue count report for tracking over time.
-//gollaw:keep
-type ImpactReport struct {
+// impactReport is a per-category and per-severity issue count report for tracking over time.
+type impactReport struct {
 	TotalIssues      int            `json:"total_issues"`
 	ByCategory       map[string]int `json:"by_category"`
 	BySeverity       map[string]int `json:"by_severity"`
@@ -16,9 +15,8 @@ type ImpactReport struct {
 	FunctionsAnalyzed int           `json:"functions_analyzed"`
 }
 
-// FormatImpact renders an impact report as JSON with per-category and per-severity counts.
-//gollaw:keep
-func FormatImpact(report *Report) ([]byte, error) {
+// formatImpact renders an impact report as JSON with per-category and per-severity counts.
+func formatImpact(report *Report) ([]byte, error) {
 	byCategory := make(map[string]int)
 	bySeverity := map[string]int{
 		"critical": 0,
@@ -34,7 +32,7 @@ func FormatImpact(report *Report) ([]byte, error) {
 		fileSet[f.File] = struct{}{}
 	}
 
-	impact := ImpactReport{
+	impact := impactReport{
 		TotalIssues:       len(report.Findings),
 		ByCategory:        byCategory,
 		BySeverity:        bySeverity,

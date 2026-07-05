@@ -8,18 +8,16 @@ import (
 	"time"
 )
 
-// TimingEntry records the duration and finding count for a single analyzer.
-//gollaw:keep
-type TimingEntry struct {
+// timingEntry records the duration and finding count for a single analyzer.
+type timingEntry struct {
 	Analyzer     string `json:"analyzer"`
 	Duration     string `json:"duration"`     // e.g. "125ms"
 	FindingCount int    `json:"findingCount"`
 }
 
-// TimingReport summarizes all analyzer timings.
-//gollaw:keep
-type TimingReport struct {
-	Entries         []TimingEntry `json:"entries"`
+// timingReport summarizes all analyzer timings.
+type timingReport struct {
+	Entries         []timingEntry `json:"entries"`
 	TotalDuration   string        `json:"totalDuration"`
 	SlowestAnalyzer string        `json:"slowestAnalyzer"`
 }
@@ -31,17 +29,15 @@ type timerEntry struct {
 	findingCount int
 }
 
-// Timer tracks timing for multiple analyzers.
-//gollaw:keep
-type Timer struct {
+// timer tracks timing for multiple analyzers.
+type timer struct {
 	start   time.Time
 	entries []timerEntry
-	current *timerEntry
 }
 
-// NewTimer creates and starts a new Timer.
-func NewTimer() *Timer {
-	return &Timer{
+// NewTimer creates and starts a new timer.
+func NewTimer() *timer {
+	return &timer{
 		start:   time.Now(),
 		entries: make([]timerEntry, 0),
 	}
@@ -49,7 +45,7 @@ func NewTimer() *Timer {
 
 // Record stops the current analyzer timing (if any) and records a new entry.
 // The duration is measured from the previous Record call (or NewTimer).
-func (t *Timer) Record(analyzerName string, findings int) {
+func (t *timer) Record(analyzerName string, findings int) {
 	now := time.Now()
 	var dur time.Duration
 
@@ -75,22 +71,22 @@ func (t *Timer) Record(analyzerName string, findings int) {
 	})
 }
 
-// Report generates a TimingReport from the recorded entries.
-func (t *Timer) Report() *TimingReport {
+// Report generates a timingReport from the recorded entries.
+func (t *timer) Report() *timingReport {
 	if len(t.entries) == 0 {
-		return &TimingReport{
-			Entries:       []TimingEntry{},
+		return &timingReport{
+			Entries:       []timingEntry{},
 			TotalDuration: "0ms",
 		}
 	}
 
-	entries := make([]TimingEntry, 0, len(t.entries))
+	entries := make([]timingEntry, 0, len(t.entries))
 	var totalDur time.Duration
 	var slowestName string
 	var slowestDur time.Duration
 
 	for _, e := range t.entries {
-		entries = append(entries, TimingEntry{
+		entries = append(entries, timingEntry{
 			Analyzer:     e.analyzer,
 			Duration:      formatDuration(e.duration),
 			FindingCount:  e.findingCount,
@@ -107,7 +103,7 @@ func (t *Timer) Report() *TimingReport {
 		return t.entries[i].duration > t.entries[j].duration
 	})
 
-	return &TimingReport{
+	return &timingReport{
 		Entries:         entries,
 		TotalDuration:   formatDuration(totalDur),
 		SlowestAnalyzer: slowestName,
@@ -129,7 +125,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // FormatTimingsText formats the timing report as a human-readable text report.
-func FormatTimingsText(report *TimingReport) string {
+func FormatTimingsText(report *timingReport) string {
 	var b strings.Builder
 
 	b.WriteString("─── Analyzer Timings ───\n\n")
@@ -158,6 +154,7 @@ func FormatTimingsText(report *TimingReport) string {
 }
 
 // FormatTimingsJSON formats the timing report as indented JSON.
-func FormatTimingsJSON(report *TimingReport) ([]byte, error) {
+//gollaw:ignore thin-wrappers
+func FormatTimingsJSON(report *timingReport) ([]byte, error) {
 	return json.MarshalIndent(report, "", "  ")
 }

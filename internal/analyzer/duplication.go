@@ -206,7 +206,6 @@ func hashBlock(block *ast.BlockStmt) (string, int) {
 }
 
 // hashStatements hashes a slice of statements.
-//gollaw:keep
 func hashStatements(stmts []ast.Stmt) string {
 	var buf bytes.Buffer
 	for _, stmt := range stmts {

@@ -76,15 +76,15 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 	return sup, nil
 }
 
-// processFileLevelComments scans file comments for file-level ignore-all directives.
+// processFileLevelComments scans file comments for file-level ignore directives.
 func processFileLevelComments(fset *token.FileSet, file *ast.File, sup *Suppressions) {
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
 			text := strings.TrimSpace(c.Text)
+			fileName := fset.Position(c.Pos()).Filename
+			pos := fset.Position(c.Pos())
 			if text == prefixIgnoreAll {
-				fileName := fset.Position(c.Pos()).Filename
 				sup.fileIgnoreAll[fileName] = true
-				pos := fset.Position(c.Pos())
 				sup.entries = append(sup.entries, suppressionEntry{
 					File:     fileName,
 					Line:     pos.Line,
@@ -92,6 +92,19 @@ func processFileLevelComments(fset *token.FileSet, file *ast.File, sup *Suppress
 					Type:     "ignore-all",
 					Text:     text,
 				})
+			} else if strings.HasPrefix(text, prefixIgnore+" ") {
+				analyzerName := strings.TrimSpace(strings.TrimPrefix(text, prefixIgnore+" "))
+				if analyzerName != "" {
+					sup.addDeclIgnore(fileName, 0, analyzerName)
+					sup.entries = append(sup.entries, suppressionEntry{
+						File:     fileName,
+						Line:     pos.Line,
+						DeclLine: 0,
+						Type:     "ignore",
+						Analyzer: analyzerName,
+						Text:     text,
+					})
+				}
 			}
 		}
 	}

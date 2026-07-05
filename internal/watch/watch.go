@@ -36,9 +36,9 @@ func Watch(dir string, patterns []string, onChange func()) error {
 	return watchLoop(watcher, debounceEvent)
 }
 
-//gollaw:keep
 // addWatchDirs recursively adds directories to the watcher, skipping
 // hidden directories, vendor, node_modules, and testdata.
+//gollaw:ignore thin-wrappers
 func addWatchDirs(watcher *fsnotify.Watcher, dir string) error {
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -176,7 +176,6 @@ func hasChangedFiles(old, current map[string]int64) bool {
 	return false
 }
 
-//gollaw:keep
 // shouldSkipDir returns true for directories that should not be watched.
 func shouldSkipDir(path string) bool {
 	base := filepath.Base(path)

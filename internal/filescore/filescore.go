@@ -9,17 +9,15 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// FileStats holds per-file statistics.
-//gollaw:keep
-type FileStats struct {
+// fileStats holds per-file statistics.
+type fileStats struct {
 	LineCount  int
 	FuncCount  int
 	Complexity int
 }
 
-// FileStatsMap maps file paths to their stats.
-//gollaw:keep
-type FileStatsMap map[string]FileStats
+// fileStatsMap maps file paths to their stats.
+type fileStatsMap map[string]fileStats
 
 // FileHealthScore is the health score for a single file.
 type FileHealthScore struct {
@@ -34,7 +32,7 @@ type FileHealthScore struct {
 }
 
 // ScoreFiles computes per-file health scores from findings.
-func ScoreFiles(findings []analyzer.Finding, stats FileStatsMap) []FileHealthScore {
+func ScoreFiles(findings []analyzer.Finding, stats fileStatsMap) []FileHealthScore {
 	weights := map[analyzer.Severity]int{
 		analyzer.SeverityCritical: 25,
 		analyzer.SeverityWarning:  8,

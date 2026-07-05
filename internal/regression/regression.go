@@ -11,9 +11,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/loader"
 )
 
-// RegressionResult holds the result of a regression check.
-//gollaw:keep
-type RegressionResult struct {
+// regressionResult holds the result of a regression check.
+type regressionResult struct {
 	BaselineCount   int            `json:"baselineCount"`
 	CurrentCount    int            `json:"currentCount"`
 	Delta           int            `json:"delta"`
@@ -27,7 +26,7 @@ type RegressionResult struct {
 // If the current finding count exceeds the baseline by more than tolerance,
 // the outcome is "fail". If it exceeds but within tolerance, outcome is "warn".
 // Otherwise the outcome is "pass".
-func RunRegression(dir string, tolerance int) (*RegressionResult, error) {
+func RunRegression(dir string, tolerance int) (*regressionResult, error) {
 	// Load baseline.
 	baselineFindings, err := baseline.Load(dir)
 	if err != nil {
@@ -60,7 +59,7 @@ func RunRegression(dir string, tolerance int) (*RegressionResult, error) {
 	}
 
 	// Compute result.
-	regResult := &RegressionResult{
+	regResult := &regressionResult{
 		BaselineCount: len(baselineFindings),
 		CurrentCount:  len(currentFindings),
 		Tolerance:     tolerance,
@@ -112,7 +111,7 @@ func countByCategory(findings []analyzer.Finding) map[string]int {
 }
 
 // FormatRegressionText renders a regression result as human-readable text.
-func FormatRegressionText(result *RegressionResult) string {
+func FormatRegressionText(result *regressionResult) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Regression Check\n")

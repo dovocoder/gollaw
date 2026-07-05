@@ -10,9 +10,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// CombinedFinding represents overlapping findings from multiple analyzers.
-//gollaw:keep
-type CombinedFinding struct {
+// combinedFinding represents overlapping findings from multiple analyzers.
+type combinedFinding struct {
 	Findings   []analyzer.Finding `json:"findings"`
 	Kind       string             `json:"kind"`
 	File       string             `json:"file"`
@@ -22,8 +21,8 @@ type CombinedFinding struct {
 }
 
 // CrossReference finds overlapping findings from different analyzers.
-func CrossReference(findings []analyzer.Finding) []CombinedFinding {
-	var combined []CombinedFinding
+func CrossReference(findings []analyzer.Finding) []combinedFinding {
+	var combined []combinedFinding
 
 	// Group by file.
 	byFile := make(map[string][]analyzer.Finding)
@@ -59,8 +58,8 @@ func CrossReference(findings []analyzer.Finding) []CombinedFinding {
 	return combined
 }
 
-func findOverlap(file string, findings []analyzer.Finding, analyzer1, analyzer2, kind, suggestion string) []CombinedFinding {
-	var result []CombinedFinding
+func findOverlap(file string, findings []analyzer.Finding, analyzer1, analyzer2, kind, suggestion string) []combinedFinding {
+	var result []combinedFinding
 	var set1, set2 []analyzer.Finding
 
 	for _, f := range findings {
@@ -75,7 +74,7 @@ func findOverlap(file string, findings []analyzer.Finding, analyzer1, analyzer2,
 	for _, f1 := range set1 {
 		for _, f2 := range set2 {
 			if rangesOverlap(f1, f2) {
-				result = append(result, CombinedFinding{
+				result = append(result, combinedFinding{
 					Findings:   []analyzer.Finding{f1, f2},
 					Kind:       kind,
 					File:       file,
@@ -102,7 +101,7 @@ func rangesOverlap(a, b analyzer.Finding) bool {
 }
 
 // FormatXRefText formats cross-reference findings as text.
-func FormatXRefText(combined []CombinedFinding) string {
+func FormatXRefText(combined []combinedFinding) string {
 	if len(combined) == 0 {
 		return "No cross-referenced findings.\n"
 	}

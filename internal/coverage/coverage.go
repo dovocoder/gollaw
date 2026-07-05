@@ -12,9 +12,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// CoverageGap describes a function that lacks test coverage.
-//gollaw:keep
-type CoverageGap struct {
+// coverageGap describes a function that lacks test coverage.
+type coverageGap struct {
 	Function   string `json:"function"`
 	File       string `json:"file"`
 	Line       int    `json:"line"`
@@ -22,18 +21,17 @@ type CoverageGap struct {
 	HasTestFile bool   `json:"hasTestFile"`
 }
 
-// CoverageReport summarises test coverage gaps across the codebase.
-//gollaw:keep
-type CoverageReport struct {
+// coverageReport summarises test coverage gaps across the codebase.
+type coverageReport struct {
 	TotalFunctions   int            `json:"totalFunctions"`
 	TestedFunctions  int            `json:"testedFunctions"`
 	UntestedFunctions int           `json:"untestedFunctions"`
 	CoveragePercent  float64        `json:"coveragePercent"`
-	Gaps             []CoverageGap  `json:"gaps"`
+	Gaps             []coverageGap  `json:"gaps"`
 }
 
 // AnalyzeCoverage finds functions with no corresponding test coverage.
-func AnalyzeCoverage(ctx *analyzer.Context) (*CoverageReport, error) {
+func AnalyzeCoverage(ctx *analyzer.Context) (*coverageReport, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("nil analyzer context")
 	}
@@ -107,7 +105,7 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*CoverageReport, error) {
 		pkgHasTestFile[fn.pkgPath] = dirHasTestFiles(dir)
 	}
 
-	report := &CoverageReport{
+	report := &coverageReport{
 		TotalFunctions: len(allFns),
 	}
 
@@ -117,7 +115,7 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*CoverageReport, error) {
 			report.TestedFunctions++
 		} else {
 			report.UntestedFunctions++
-			report.Gaps = append(report.Gaps, CoverageGap{
+			report.Gaps = append(report.Gaps, coverageGap{
 				Function:   fn.name,
 				File:       fn.file,
 				Line:       fn.line,
@@ -142,7 +140,7 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*CoverageReport, error) {
 }
 
 // FormatCoverageText renders the coverage report as a human-readable table.
-func FormatCoverageText(report *CoverageReport) string {
+func FormatCoverageText(report *coverageReport) string {
 	if report == nil {
 		return ""
 	}
@@ -172,7 +170,7 @@ func FormatCoverageText(report *CoverageReport) string {
 }
 
 // FormatCoverageJSON renders the coverage report as JSON.
-func FormatCoverageJSON(report *CoverageReport) ([]byte, error) {
+func FormatCoverageJSON(report *coverageReport) ([]byte, error) {
 	if report == nil {
 		return []byte("null"), nil
 	}

@@ -9,29 +9,27 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// NextStep is an actionable recommendation derived from findings.
-//gollaw:keep
-type NextStep struct {
+// nextStep is an actionable recommendation derived from findings.
+type nextStep struct {
 	Action      string `json:"action"`
 	Priority    string `json:"priority"`
 	Count       int    `json:"count"`
 	Description string `json:"description"`
 }
 
-// FormatNextSteps renders actionable next-step recommendations as a JSON array.
+// formatNextSteps renders actionable next-step recommendations as a JSON array.
 // At most 5 steps are returned, sorted by priority (critical > high > medium > low).
-//gollaw:keep
-func FormatNextSteps(report *Report) ([]byte, error) {
+func formatNextSteps(report *Report) ([]byte, error) {
 	categoryCounts := make(map[string]int)
 	for _, f := range report.Findings {
 		categoryCounts[string(f.Category)]++
 	}
 
-	var steps []NextStep
+	var steps []nextStep
 
 	// Dead code → suggest running fix.
 	if n := categoryCounts[string(analyzer.CategoryDeadCode)]; n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "gollaw fix --analyzer deadcode",
 			Priority:    "high",
 			Count:       n,
@@ -41,7 +39,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 
 	// Unused dependencies → go mod tidy.
 	if n := countByCategoryOrKeyword(categoryCounts, "dependencies", "unused-deps"); n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "go mod tidy",
 			Priority:    "medium",
 			Count:       n,
@@ -51,7 +49,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 
 	// Complexity → refactor.
 	if n := categoryCounts[string(analyzer.CategoryComplexity)]; n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "refactor",
 			Priority:    "high",
 			Count:       n,
@@ -61,7 +59,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 
 	// Duplication → extract.
 	if n := categoryCounts[string(analyzer.CategoryDuplication)]; n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "extract",
 			Priority:    "medium",
 			Count:       n,
@@ -71,7 +69,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 
 	// Security findings → review (matched by keyword since no dedicated category).
 	if n := countSecurityFindings(report.Findings); n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "review",
 			Priority:    "critical",
 			Count:       n,
@@ -81,7 +79,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 
 	// Naming findings → fix (matched by keyword since no dedicated category).
 	if n := countNamingFindings(report.Findings); n > 0 {
-		steps = append(steps, NextStep{
+		steps = append(steps, nextStep{
 			Action:      "gollaw fix --analyzer naming",
 			Priority:    "low",
 			Count:       n,
@@ -100,7 +98,7 @@ func FormatNextSteps(report *Report) ([]byte, error) {
 	}
 
 	if steps == nil {
-		steps = []NextStep{}
+		steps = []nextStep{}
 	}
 
 	out, err := json.MarshalIndent(steps, "", "  ")

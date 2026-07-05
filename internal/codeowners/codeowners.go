@@ -19,21 +19,20 @@ type ownerRule struct {
 	isNegation bool
 }
 
-// CodeOwners holds the parsed CODEOWNERS rules.
-//gollaw:keep
-type CodeOwners struct {
+// codeOwners holds the parsed CODEOWNERS rules.
+type codeOwners struct {
 	rules []ownerRule
 }
 
 // Parse reads a CODEOWNERS file and returns the parsed rules.
-func Parse(path string) (*CodeOwners, error) {
+func Parse(path string) (*codeOwners, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open CODEOWNERS %s: %w", path, err)
 	}
 	defer f.Close()
 
-	var co CodeOwners
+	var co codeOwners
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -93,7 +92,7 @@ func FindCodeOwnersFile(projectDir string) (string, error) {
 
 // FindOwners returns the list of owners for a given file path.
 // CODEOWNERS semantics: last matching rule wins; negation rules clear ownership.
-func FindOwners(file string, owners *CodeOwners) []string {
+func FindOwners(file string, owners *codeOwners) []string {
 	if owners == nil {
 		return nil
 	}
@@ -117,7 +116,7 @@ func FindOwners(file string, owners *CodeOwners) []string {
 
 // GroupByOwner maps each finding to its responsible owners and groups them.
 // Findings with no identifiable owner are grouped under "(unowned)".
-func GroupByOwner(findings []analyzer.Finding, owners *CodeOwners) map[string][]analyzer.Finding {
+func GroupByOwner(findings []analyzer.Finding, owners *codeOwners) map[string][]analyzer.Finding {
 	groups := make(map[string][]analyzer.Finding)
 	for _, f := range findings {
 		var ownerList []string

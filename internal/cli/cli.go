@@ -1,4 +1,5 @@
-//gollaw:keep
+//gollaw:ignore dependencies
+// Package cli implements the command-line interface for Gollaw.
 package cli
 
 import (
@@ -39,6 +40,7 @@ import (
 )
 
 // Version is set at build time via -ldflags "-X github.com/dovocoder/gollaw/internal/cli.Version=v0.2.0".
+//gollaw:ignore api-surface
 var Version = "0.2.0-dev"
 
 // Run is the main CLI entry point.

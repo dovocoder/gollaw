@@ -6,10 +6,9 @@ import (
 	"sort"
 )
 
-// FormatGrouped renders findings grouped by file, with category tags per finding.
+// formatGrouped renders findings grouped by file, with category tags per finding.
 // Files are sorted alphabetically; findings within a file are sorted by line.
-//gollaw:keep
-func FormatGrouped(report *Report) ([]byte, error) {
+func formatGrouped(report *Report) ([]byte, error) {
 	byFile, files := groupByFile(report.Findings)
 
 	var buf bytes.Buffer

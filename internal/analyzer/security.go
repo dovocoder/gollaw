@@ -225,7 +225,6 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Fin
 	return findings
 }
 
-//gollaw:keep
 func containsAny(s string, substrs ...string) bool {
 	for _, sub := range substrs {
 		if strings.Contains(s, sub) {

@@ -10,22 +10,20 @@ import (
 	"github.com/dovocoder/gollaw/internal/filescore"
 )
 
-// RefactoringTarget is a recommendation for a file or function that needs attention.
-//gollaw:keep
-type RefactoringTarget struct {
+// refactoringTarget is a recommendation for a file or function that needs attention.
+type refactoringTarget struct {
 	File          string          `json:"file"`
 	Function      string          `json:"function,omitempty"`
 	Score         int             `json:"score"`
 	Category      string          `json:"category"`
 	Effort        string          `json:"effort"`        // S, M, L, XL
 	Confidence    string          `json:"confidence"`    // high, medium, low
-	Evidence      []TargetEvidence `json:"evidence"`
+	Evidence      []targetEvidence `json:"evidence"`
 	Recommendation string         `json:"recommendation"`
 }
 
-// TargetEvidence is a single piece of evidence supporting a refactoring target.
-//gollaw:keep
-type TargetEvidence struct {
+// targetEvidence is a single piece of evidence supporting a refactoring target.
+type targetEvidence struct {
 	Kind        string `json:"kind"`
 	Description string `json:"description"`
 }
@@ -35,7 +33,7 @@ type TargetEvidence struct {
 func ComputeRefactoringTargets(
 	findings []analyzer.Finding,
 	fileScores []filescore.FileHealthScore,
-) []RefactoringTarget {
+) []refactoringTarget {
 	if len(fileScores) == 0 {
 		return nil
 	}
@@ -59,7 +57,7 @@ func ComputeRefactoringTargets(
 		maxTargets = len(sorted)
 	}
 
-	var targets []RefactoringTarget
+	var targets []refactoringTarget
 	for i := 0; i < maxTargets; i++ {
 		fs := sorted[i]
 		fileFindings := findingsByFile[fs.File]
@@ -77,8 +75,8 @@ func ComputeRefactoringTargets(
 	return targets
 }
 
-// buildTarget creates a RefactoringTarget from a file score and its findings.
-func buildTarget(fs filescore.FileHealthScore, findings []analyzer.Finding) RefactoringTarget {
+// buildTarget creates a refactoringTarget from a file score and its findings.
+func buildTarget(fs filescore.FileHealthScore, findings []analyzer.Finding) refactoringTarget {
 	dominantCategory := findDominantCategory(findings)
 	criticalCount, warningCount := countBySeverity(findings)
 	deadCount, dupCount, complexityVal, complexityFunc := categorizeFindings(findings)
@@ -88,7 +86,7 @@ func buildTarget(fs filescore.FileHealthScore, findings []analyzer.Finding) Refa
 	evidence := buildEvidence(fs, findings, criticalCount, deadCount, dupCount, complexityVal, complexityFunc)
 	recommendation := buildRecommendation(dominantCategory, deadCount, complexityFunc, complexityVal, dupCount, findings)
 
-	return RefactoringTarget{
+	return refactoringTarget{
 		File:           fs.File,
 		Function:       complexityFunc,
 		Score:          fs.Score,
@@ -225,39 +223,39 @@ func buildEvidence(
 	findings []analyzer.Finding,
 	criticalCount, deadCount, dupCount, complexityVal int,
 	complexityFunc string,
-) []TargetEvidence {
-	var evidence []TargetEvidence
+) []targetEvidence {
+	var evidence []targetEvidence
 
 	if criticalCount > 0 {
-		evidence = append(evidence, TargetEvidence{
+		evidence = append(evidence, targetEvidence{
 			Kind:        "critical",
 			Description: fmt.Sprintf("file has %d critical findings", criticalCount),
 		})
 	}
 
 	if complexityVal > 0 && complexityFunc != "" {
-		evidence = append(evidence, TargetEvidence{
+		evidence = append(evidence, targetEvidence{
 			Kind:        "complexity",
 			Description: fmt.Sprintf("function %s has complexity %d", complexityFunc, complexityVal),
 		})
 	}
 
 	if dupCount > 0 {
-		evidence = append(evidence, TargetEvidence{
+		evidence = append(evidence, targetEvidence{
 			Kind:        "duplication",
 			Description: fmt.Sprintf("%d duplicated blocks", dupCount),
 		})
 	}
 
 	if deadCount > 0 {
-		evidence = append(evidence, TargetEvidence{
+		evidence = append(evidence, targetEvidence{
 			Kind:        "dead-code",
 			Description: fmt.Sprintf("%d dead code findings", deadCount),
 		})
 	}
 
 	// Add finding count evidence
-	evidence = append(evidence, TargetEvidence{
+	evidence = append(evidence, targetEvidence{
 		Kind:        "score",
 		Description: fmt.Sprintf("file health score is %d/100 with %d total findings", fs.Score, len(findings)),
 	})
@@ -297,7 +295,7 @@ func buildRecommendation(
 }
 
 // FormatTargetsText formats refactoring targets as a human-readable text report.
-func FormatTargetsText(targets []RefactoringTarget) string {
+func FormatTargetsText(targets []refactoringTarget) string {
 	if len(targets) == 0 {
 		return "No refactoring targets identified.\n"
 	}
@@ -322,6 +320,7 @@ func FormatTargetsText(targets []RefactoringTarget) string {
 }
 
 // FormatTargetsJSON formats refactoring targets as indented JSON.
-func FormatTargetsJSON(targets []RefactoringTarget) ([]byte, error) {
+//gollaw:ignore thin-wrappers
+func FormatTargetsJSON(targets []refactoringTarget) ([]byte, error) {
 	return json.MarshalIndent(targets, "", "  ")
 }

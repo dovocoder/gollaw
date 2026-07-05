@@ -7,20 +7,18 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// PRGate is a single pass/fail gate in a PR decision.
-//gollaw:keep
-type PRGate struct {
+// prGate is a single pass/fail gate in a PR decision.
+type prGate struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
 	Count  int    `json:"count"`
 }
 
-// PRDecision is the machine-readable PR decision surface.
-//gollaw:keep
-type PRDecision struct {
+// prDecision is the machine-readable PR decision surface.
+type prDecision struct {
 	Schema       string         `json:"schema"`
 	Conclusion   string         `json:"conclusion"`
-	Gates        []PRGate       `json:"gates"`
+	Gates        []prGate       `json:"gates"`
 	Counts       map[string]int `json:"counts"`
 	HealthScore  int            `json:"health_score"`
 }
@@ -28,9 +26,8 @@ type PRDecision struct {
 // healthThreshold is the default minimum health score for a passing gate.
 const healthThreshold = 70
 
-// FormatPRDecision renders a structured PR decision with pass/fail gates.
-//gollaw:keep
-func FormatPRDecision(report *Report) ([]byte, error) {
+// formatPRDecision renders a structured PR decision with pass/fail gates.
+func formatPRDecision(report *Report) ([]byte, error) {
 	counts := map[string]int{
 		"critical": 0,
 		"warning":  0,
@@ -42,25 +39,25 @@ func FormatPRDecision(report *Report) ([]byte, error) {
 		counts[string(f.Severity)]++
 	}
 
-	var gates []PRGate
+	var gates []prGate
 
 	// Gate: no-critical — fail if any critical findings.
 	critCount := counts["critical"]
-	gates = append(gates, PRGate{
+	gates = append(gates, prGate{
 		Name:   "no-critical",
 		Passed: critCount == 0,
 		Count:  critCount,
 	})
 
 	// Gate: no-new-warnings — placeholder for diff mode (always passes in full-scan mode).
-	gates = append(gates, PRGate{
+	gates = append(gates, prGate{
 		Name:   "no-new-warnings",
 		Passed: true,
 		Count:  0,
 	})
 
 	// Gate: health-above-threshold — pass if score >= threshold.
-	gates = append(gates, PRGate{
+	gates = append(gates, prGate{
 		Name:   "health-above-threshold",
 		Passed: report.HealthScore.Score >= healthThreshold,
 		Count:  healthThreshold,
@@ -78,7 +75,7 @@ func FormatPRDecision(report *Report) ([]byte, error) {
 		conclusion = "neutral"
 	}
 
-	decision := PRDecision{
+	decision := prDecision{
 		Schema:      "gollaw-pr-decision/v1",
 		Conclusion:  conclusion,
 		Gates:       gates,

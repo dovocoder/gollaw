@@ -9,40 +9,36 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// CodeClimateIssue is a single issue in CodeClimate / GitLab Code Quality format.
-//gollaw:keep
-type CodeClimateIssue struct {
+// codeClimateIssue is a single issue in CodeClimate / GitLab Code Quality format.
+type codeClimateIssue struct {
 	Description string             `json:"description"`
 	Fingerprint string             `json:"fingerprint"`
 	Severity    string             `json:"severity"`
-	Location    CodeClimateLocation `json:"location"`
+	Location    codeClimateLocation `json:"location"`
 }
 
-// CodeClimateLocation describes where an issue was found.
-//gollaw:keep
-type CodeClimateLocation struct {
+// codeClimateLocation describes where an issue was found.
+type codeClimateLocation struct {
 	Path  string              `json:"path"`
-	Lines CodeClimateLines     `json:"lines"`
+	Lines codeClimateLines     `json:"lines"`
 }
 
-// CodeClimateLines holds line range info.
-//gollaw:keep
-type CodeClimateLines struct {
+// codeClimateLines holds line range info.
+type codeClimateLines struct {
 	Begin int `json:"begin"`
 }
 
-// FormatCodeClimate renders the report as a CodeClimate / GitLab Code Quality JSON array.
-//gollaw:keep
-func FormatCodeClimate(report *Report) ([]byte, error) {
-	issues := make([]CodeClimateIssue, 0, len(report.Findings))
+// formatCodeClimate renders the report as a CodeClimate / GitLab Code Quality JSON array.
+func formatCodeClimate(report *Report) ([]byte, error) {
+	issues := make([]codeClimateIssue, 0, len(report.Findings))
 	for _, f := range report.Findings {
-		issue := CodeClimateIssue{
+		issue := codeClimateIssue{
 			Description: f.Message,
 			Fingerprint: codeClimateFingerprint(f),
 			Severity:    codeClimateSeverity(f.Severity),
-			Location: CodeClimateLocation{
+			Location: codeClimateLocation{
 				Path: f.File,
-				Lines: CodeClimateLines{
+				Lines: codeClimateLines{
 					Begin: f.Line,
 				},
 			},

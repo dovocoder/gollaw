@@ -15,9 +15,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/reporter"
 )
 
-// VitalSigns is a project-wide metrics snapshot.
-//gollaw:keep
-type VitalSigns struct {
+// vitalSigns is a project-wide metrics snapshot.
+type vitalSigns struct {
 	// Counts
 	TotalFiles    int `json:"totalFiles"`
 	TotalPackages int `json:"totalPackages"`
@@ -66,8 +65,8 @@ func ComputeVitalSigns(
 	stats reporter.CodebaseStats,
 	fileScores []filescore.FileHealthScore,
 	coveragePercent float64,
-) *VitalSigns {
-	vs := &VitalSigns{
+) *vitalSigns {
+	vs := &vitalSigns{
 		TotalFiles:     stats.Files,
 		TotalPackages:  stats.Packages,
 		TotalFunctions: stats.Functions,
@@ -219,7 +218,7 @@ func gradeFor(score int) string {
 }
 
 // FormatVitalSignsText formats vital signs as a human-readable text report.
-func FormatVitalSignsText(vs *VitalSigns) string {
+func FormatVitalSignsText(vs *vitalSigns) string {
 	var b strings.Builder
 
 	b.WriteString("─── Vital Signs ───\n\n")
@@ -277,6 +276,7 @@ func FormatVitalSignsText(vs *VitalSigns) string {
 }
 
 // FormatVitalSignsJSON formats vital signs as indented JSON.
-func FormatVitalSignsJSON(vs *VitalSigns) ([]byte, error) {
+//gollaw:ignore thin-wrappers
+func FormatVitalSignsJSON(vs *vitalSigns) ([]byte, error) {
 	return json.MarshalIndent(vs, "", "  ")
 }

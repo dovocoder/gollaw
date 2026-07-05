@@ -10,34 +10,32 @@ import (
 	"github.com/dovocoder/gollaw/internal/reporter"
 )
 
-// WalkthroughStep represents a single step in a guided walkthrough.
-//gollaw:keep
-type WalkthroughStep struct {
+// walkthroughStep represents a single step in a guided walkthrough.
+type walkthroughStep struct {
 	Title       string              `json:"title"`
 	Description string              `json:"description"`
 	Findings    []analyzer.Finding  `json:"findings"`
 	Action      string              `json:"action"`
 }
 
-// WalkthroughResult holds the complete guided walkthrough.
-//gollaw:keep
-type WalkthroughResult struct {
-	Steps         []WalkthroughStep `json:"steps"`
+// walkthroughResult holds the complete guided walkthrough.
+type walkthroughResult struct {
+	Steps         []walkthroughStep `json:"steps"`
 	TotalFindings int               `json:"totalFindings"`
 	EstimatedTime string            `json:"estimatedTime"`
 }
 
 // GenerateWalkthrough creates a structured walkthrough from findings and
 // codebase stats. Steps are ordered by priority and skip empty categories.
-func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseStats) *WalkthroughResult {
-	result := &WalkthroughResult{
-		Steps: []WalkthroughStep{},
+func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseStats) *walkthroughResult {
+	result := &walkthroughResult{
+		Steps: []walkthroughStep{},
 	}
 
 	// Step 1: Health Overview — always included.
 	healthScore := computeHealthScore(findings)
 	grade := computeGrade(healthScore)
-	result.Steps = append(result.Steps, WalkthroughStep{
+	result.Steps = append(result.Steps, walkthroughStep{
 		Title:       "Health Overview",
 		Description: fmt.Sprintf("Codebase: %d packages, %d files, %d functions, %d types. Health score: %d/100 (grade: %s).", stats.Packages, stats.Files, stats.Functions, stats.Types, healthScore, grade),
 		Findings:    nil,
@@ -47,7 +45,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 	// Step 2: Critical Issues — all critical findings.
 	criticalFindings := filterBySeverity(findings, analyzer.SeverityCritical)
 	if len(criticalFindings) > 0 {
-		result.Steps = append(result.Steps, WalkthroughStep{
+		result.Steps = append(result.Steps, walkthroughStep{
 			Title:       "Critical Issues",
 			Description: fmt.Sprintf("%d critical findings that should be addressed immediately.", len(criticalFindings)),
 			Findings:    criticalFindings,
@@ -58,7 +56,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 	// Step 3: Dead Code — deadcode findings.
 	deadCodeFindings := filterByAnalyzer(findings, "deadcode")
 	if len(deadCodeFindings) > 0 {
-		result.Steps = append(result.Steps, WalkthroughStep{
+		result.Steps = append(result.Steps, walkthroughStep{
 			Title:       "Dead Code",
 			Description: fmt.Sprintf("%d unreachable functions detected.", len(deadCodeFindings)),
 			Findings:    deadCodeFindings,
@@ -69,7 +67,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 	// Step 4: Complexity Hotspots — complexity findings.
 	complexityFindings := filterByCategory(findings, analyzer.CategoryComplexity)
 	if len(complexityFindings) > 0 {
-		result.Steps = append(result.Steps, WalkthroughStep{
+		result.Steps = append(result.Steps, walkthroughStep{
 			Title:       "Complexity Hotspots",
 			Description: fmt.Sprintf("%d functions with high cyclomatic or cognitive complexity.", len(complexityFindings)),
 			Findings:    complexityFindings,
@@ -80,7 +78,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 	// Step 5: Duplication — duplication findings.
 	duplicationFindings := filterByCategory(findings, analyzer.CategoryDuplication)
 	if len(duplicationFindings) > 0 {
-		result.Steps = append(result.Steps, WalkthroughStep{
+		result.Steps = append(result.Steps, walkthroughStep{
 			Title:       "Duplication",
 			Description: fmt.Sprintf("%d duplicate code blocks detected.", len(duplicationFindings)),
 			Findings:    duplicationFindings,
@@ -91,7 +89,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 	// Step 6: Security Review — security findings.
 	securityFindings := filterByAnalyzer(findings, "security")
 	if len(securityFindings) > 0 {
-		result.Steps = append(result.Steps, WalkthroughStep{
+		result.Steps = append(result.Steps, walkthroughStep{
 			Title:       "Security Review",
 			Description: fmt.Sprintf("%d security-related findings.", len(securityFindings)),
 			Findings:    securityFindings,
@@ -101,7 +99,7 @@ func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseSta
 
 	// Step 7: Next Steps — always included.
 	nextStepsAction := buildNextStepsAction(findings)
-	result.Steps = append(result.Steps, WalkthroughStep{
+	result.Steps = append(result.Steps, walkthroughStep{
 		Title:       "Next Steps",
 		Description: "Recommendations for ongoing code quality improvement.",
 		Findings:    nil,
@@ -234,7 +232,7 @@ func estimateTime(findings []analyzer.Finding) string {
 }
 
 // FormatWalkthroughText renders a walkthrough result as human-readable text.
-func FormatWalkthroughText(result *WalkthroughResult) string {
+func FormatWalkthroughText(result *walkthroughResult) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Guided Codebase Walkthrough\n")

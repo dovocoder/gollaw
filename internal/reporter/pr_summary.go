@@ -9,10 +9,9 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// FormatPRSummary renders a sticky PR summary comment in markdown for GitHub PRs.
+// formatPRSummary renders a sticky PR summary comment in markdown for GitHub PRs.
 // Shows status emoji, health score badge, and at most 10 findings.
-//gollaw:keep
-func FormatPRSummary(report *Report) ([]byte, error) {
+func formatPRSummary(report *Report) ([]byte, error) {
 	var buf bytes.Buffer
 
 	fmt.Fprintf(&buf, "## 🤖 Gollaw Code Review\n\n")

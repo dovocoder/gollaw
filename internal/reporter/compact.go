@@ -9,11 +9,10 @@ import (
 	"github.com/dovocoder/gollaw/internal/analyzer"
 )
 
-// FormatCompact renders one finding per line in a pipe-delimited compact format:
+// formatCompact renders one finding per line in a pipe-delimited compact format:
 // SEVERITY|analyzer|file:line|ruleId|message
 // Findings are sorted by file then line, followed by a summary line.
-//gollaw:keep
-func FormatCompact(report *Report) ([]byte, error) {
+func formatCompact(report *Report) ([]byte, error) {
 	findings := make([]analyzer.Finding, len(report.Findings))
 	copy(findings, report.Findings)
 	sort.Slice(findings, func(i, j int) bool {
