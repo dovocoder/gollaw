@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"sort"
+	"strings"
 )
 
 // thinWrapperAnalyzer flags functions that just delegate to a single other
@@ -34,6 +35,14 @@ func (a *thinWrapperAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 // in their body (candidates for thin wrapper detection).
 // Skips cobra command constructors and their RunE closures,
 // which are inherently thin wrappers by design.
+// Also skips common Go patterns that are thin wrappers by design:
+//   - Methods with receivers (OOP-style API on top of package functions)
+//   - Error predicates (IsXxx wrapping errors.Is/errors.As)
+//   - Exported wrappers around unexported (Open → open, encapsulation)
+//   - Logger interface implementations (Errorf, Warnf, Infof, Debugf)
+//   - Factory/config helpers (DefaultXxx, newXxxTableWriter, etc.)
+//   - Wrappers around stdlib (filepath.Join, strings.ToLower, etc.)
+//   - Row-to-struct converters (xxxFromGetRow → xxxFromScalars)
 func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 	var fns []*ast.FuncDecl
 	for _, files := range ctx.SyntaxByPkg {
@@ -48,6 +57,43 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				if isCobraConstructor(fn) {
 					continue
 				}
+				// Skip methods (functions with a receiver) — in Go, methods
+				// on a struct that delegate to package-level functions are a
+				// standard OOP-style API pattern, not a code smell.
+				if fn.Recv != nil && len(fn.Recv.List) > 0 {
+					continue
+				}
+				// Skip error predicates (IsXxx wrapping errors.Is/As).
+				if isErrorPredicate(fn) {
+					continue
+				}
+				// Skip exported wrappers around unexported functions
+				// (e.g., Open → open). This is standard Go encapsulation.
+				if isExportedWrapperOfUnexported(fn) {
+					continue
+				}
+				// Skip logger interface implementations.
+				if isLoggerMethod(fn) {
+					continue
+				}
+				// Skip wrappers around stdlib package functions
+				// (filepath.Join, strings.ToLower, fmt.Errorf, etc.)
+				if isStdlibWrapper(fn) {
+					continue
+				}
+				// Skip row-to-struct converters (xxxFromYyyRow → xxxFromScalars)
+				if isRowConverter(fn) {
+					continue
+				}
+				// Skip factory/config helpers (DefaultXxx, newXxxWriter)
+				if isFactoryOrConfig(fn) {
+					continue
+				}
+				// Skip cobra subcommand constructors that delegate to a shared
+				// constructor (e.g., newGroupsAnnounceOnlyCmd → newGroupsToggleCmd)
+				if isCobraSubcommandConstructor(fn) {
+					continue
+				}
 				// Skip very short functions (< 3 statements).
 				stmts := fn.Body.List
 				if len(stmts) < 1 || len(stmts) > 3 {
@@ -58,6 +104,233 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 		}
 	}
 	return fns
+}
+
+// isErrorPredicate returns true if the function is named IsXxx and its body
+// is a single return of an errors.Is or errors.As call.
+func isErrorPredicate(fn *ast.FuncDecl) bool {
+	if !strings.HasPrefix(fn.Name.Name, "Is") || fn.Body == nil {
+		return false
+	}
+	stmts := fn.Body.List
+	if len(stmts) != 1 {
+		return false
+	}
+	ret, ok := stmts[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return false
+	}
+	call, ok := ret.Results[0].(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "errors" {
+		return sel.Sel.Name == "Is" || sel.Sel.Name == "As"
+	}
+	return false
+}
+
+// isExportedWrapperOfUnexported returns true if the function is exported
+// and its body delegates to an unexported function with the same base name
+// (e.g., Open → open, ParseFoo → parseFoo).
+func isExportedWrapperOfUnexported(fn *ast.FuncDecl) bool {
+	if !fn.Name.IsExported() || fn.Body == nil {
+		return false
+	}
+	exportedName := fn.Name.Name
+	// Expected unexported version: lowercase first letter
+	if len(exportedName) < 2 {
+		return false
+	}
+	unexportedName := strings.ToLower(exportedName[:1]) + exportedName[1:]
+	stmts := fn.Body.List
+	if len(stmts) < 1 || len(stmts) > 2 {
+		return false
+	}
+	// Check if the body calls a function with the unexported name
+	for _, stmt := range stmts {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == unexportedName {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	// Re-check: does any call in the body match the unexported name?
+	var found bool
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == unexportedName {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isLoggerMethod returns true if the function name matches common logger
+// interface method names (Errorf, Warnf, Infof, Debugf, Error, Warn, Info,
+// Debug, Fatal, Fatalf, Print, Printf, Println).
+func isLoggerMethod(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	switch name {
+	case "Errorf", "Warnf", "Infof", "Debugf", "Tracef",
+		"Error", "Warn", "Info", "Debug", "Trace",
+		"Fatal", "Fatalf", "Panic", "Panicf",
+		"Print", "Printf", "Println":
+		return true
+	}
+	return false
+}
+
+// stdlibPackages is the set of stdlib packages whose wrappers are common
+// Go patterns and should not be flagged as thin wrappers.
+var stdlibPackages = map[string]bool{
+	"fmt":        true,
+	"strings":    true,
+	"strconv":    true,
+	"path":       true,
+	"path/filepath": true,
+	"os":         true,
+	"errors":     true,
+	"context":    true,
+	"sort":       true,
+	"time":       true,
+	"syscall":    true,
+	"net":        true,
+	"net/url":    true,
+	"unicode":    true,
+	"unicode/utf8": true,
+}
+
+// isStdlibWrapper returns true if the function body's single call is to a
+// stdlib package function (e.g., filepath.Join, strings.ToLower, fmt.Errorf).
+func isStdlibWrapper(fn *ast.FuncDecl) bool {
+	if fn.Body == nil {
+		return false
+	}
+	stmts := fn.Body.List
+	if len(stmts) < 1 || len(stmts) > 2 {
+		return false
+	}
+	// Check all calls in the body
+	var calls []*ast.CallExpr
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			calls = append(calls, call)
+		}
+		return true
+	})
+	if len(calls) == 0 {
+		return false
+	}
+	// If the primary call is to a stdlib package function, skip
+	for _, call := range calls {
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if pkg, ok := sel.X.(*ast.Ident); ok {
+				if stdlibPackages[pkg.Name] {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// isRowConverter returns true if the function name matches the pattern
+// xxxFromYyyRow or xxxFromYyy (where Yyy is Get/Find/Before/After) and
+// delegates to a xxxFromScalars function. This is a common database row
+// conversion pattern.
+func isRowConverter(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	// Check if name contains "From" and ends with "Row"
+	if !strings.Contains(name, "From") {
+		return false
+	}
+	// Check if body calls a function ending in "FromScalars"
+	if fn.Body == nil {
+		return false
+	}
+	var found bool
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok {
+				if strings.HasSuffix(ident.Name, "FromScalars") {
+					found = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isFactoryOrConfig returns true if the function is a factory or config
+// helper: DefaultXxx, newXxxWriter, newXxxTableWriter, etc.
+func isFactoryOrConfig(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	// DefaultXxx pattern (e.g., DefaultConfigPath, DefaultAccountStore)
+	if strings.HasPrefix(name, "Default") {
+		return true
+	}
+	// newXxx pattern where body creates a struct or calls a constructor
+	if strings.HasPrefix(name, "new") && fn.Body != nil {
+		// Check if body contains a composite literal or a call to a "New" function
+		var found bool
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if _, ok := n.(*ast.CompositeLit); ok {
+				found = true
+				return false
+			}
+			if call, ok := n.(*ast.CallExpr); ok {
+				if ident, ok := call.Fun.(*ast.Ident); ok && strings.HasPrefix(ident.Name, "New") {
+					found = true
+					return false
+				}
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+// isCobraSubcommandConstructor returns true if the function name starts with
+// "new" and ends with "Cmd" and its body delegates to another "newXxxCmd"
+// function (e.g., newGroupsAnnounceOnlyCmd → newGroupsToggleCmd).
+func isCobraSubcommandConstructor(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	if !strings.HasPrefix(name, "new") || !strings.HasSuffix(name, "Cmd") {
+		return false
+	}
+	if fn.Body == nil {
+		return false
+	}
+	// Check if body calls another function ending in "Cmd"
+	var found bool
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok {
+				if strings.HasSuffix(ident.Name, "Cmd") && ident.Name != name {
+					found = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // isCobraConstructor returns true if the function body contains an actual
