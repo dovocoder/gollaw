@@ -49,75 +49,109 @@ func Run(args []string) int {
 		fmt.Println(usageText)
 		return 1
 	}
+	return dispatchCommand(args[0], args[1:])
+}
 
-	switch args[0] {
-	case "analyze":
-		return runAnalyze(args[1:])
-	case "audit":
-		return runAudit(args[1:])
-	case "guard":
-		return runGuard(args[1:])
-	case "explain":
-		return runExplain(args[1:])
-	case "trace":
-		return runTrace(args[1:])
-	case "baseline":
-		return runBaseline(args[1:])
-	case "health":
-		return runHealth(args[1:])
-	case "file-scores":
-		return runFileScores(args[1:])
-	case "xref":
-		return runXRef(args[1:])
-	case "public-api":
-		return runPublicAPI(args[1:])
-	case "coverage":
-		return runCoverage(args[1:])
-	case "owners":
-		return runOwners(args[1:])
-	case "list":
-		return runList()
-	case "version":
-		fmt.Printf("gollaw v%s\n", Version)
-		return 0
-	case "lsp":
-		return runLSP()
-	case "mcp":
-		return runMCP()
-	case "watch":
-		return runWatchCmd(args[1:])
-	case "init":
-		return runInit(args[1:])
-	case "fix":
-		return runFix(args[1:])
-	case "inspect":
-		return runInspect(args[1:])
-	case "migrate":
-		return runMigrate(args[1:])
-	case "regression":
-		return runRegression(args[1:])
-	case "walkthrough":
-		return runWalkthrough(args[1:])
-	case "rule-pack":
-		return runRulePack(args[1:])
-	case "impact":
-		return runImpact(args[1:])
-	case "vital-signs":
-		return runVitalSigns(args[1:])
-	case "targets":
-		return runTargets(args[1:])
-	case "trends":
-		return runTrends(args[1:])
-	case "timings":
-		return runTimings(args[1:])
+// dispatchCommand routes to the appropriate command handler.
+func dispatchCommand(cmd string, rest []string) int {
+	if code, ok := tryAnalysisCommand(cmd, rest); ok {
+		return code
+	}
+	if code, ok := tryReportCommand(cmd, rest); ok {
+		return code
+	}
+	if code, ok := tryUtilityCommand(cmd, rest); ok {
+		return code
+	}
+	switch cmd {
 	case "help", "-h", "--help":
 		fmt.Println(usageText)
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", cmd)
 		fmt.Println(usageText)
 		return 1
 	}
+}
+
+// tryAnalysisCommand handles analysis-related commands.
+func tryAnalysisCommand(cmd string, rest []string) (int, bool) {
+	switch cmd {
+	case "analyze":
+		return runAnalyze(rest), true
+	case "audit":
+		return runAudit(rest), true
+	case "guard":
+		return runGuard(rest), true
+	case "explain":
+		return runExplain(rest), true
+	case "trace":
+		return runTrace(rest), true
+	case "baseline":
+		return runBaseline(rest), true
+	case "fix":
+		return runFix(rest), true
+	case "inspect":
+		return runInspect(rest), true
+	case "regression":
+		return runRegression(rest), true
+	}
+	return 0, false
+}
+
+// tryReportCommand handles report-generating commands.
+func tryReportCommand(cmd string, rest []string) (int, bool) {
+	switch cmd {
+	case "health":
+		return runHealth(rest), true
+	case "file-scores":
+		return runFileScores(rest), true
+	case "xref":
+		return runXRef(rest), true
+	case "public-api":
+		return runPublicAPI(rest), true
+	case "coverage":
+		return runCoverage(rest), true
+	case "owners":
+		return runOwners(rest), true
+	case "impact":
+		return runImpact(rest), true
+	case "vital-signs":
+		return runVitalSigns(rest), true
+	case "targets":
+		return runTargets(rest), true
+	case "trends":
+		return runTrends(rest), true
+	case "timings":
+		return runTimings(rest), true
+	case "walkthrough":
+		return runWalkthrough(rest), true
+	}
+	return 0, false
+}
+
+// tryUtilityCommand handles utility commands.
+func tryUtilityCommand(cmd string, rest []string) (int, bool) {
+	switch cmd {
+	case "list":
+		return runList(), true
+	case "version":
+		fmt.Printf("gollaw v%s\n", Version)
+		return 0, true
+	case "lsp":
+		return runLSP(), true
+	case "mcp":
+		return runMCP(), true
+	case "watch":
+		return runWatchCmd(rest), true
+	case "init":
+		return runInit(rest), true
+	case "migrate":
+		return runMigrate(rest), true
+	case "rule-pack":
+		return runRulePack(rest), true
+	}
+	return 0, false
 }
 
 // ─── shared helpers ───
@@ -144,66 +178,159 @@ func parseAnalyzeFlags(args []string) (analyzeOpts, int) {
 		useConfig:   true,
 		useSuppress: true,
 	}
+	if code := o.parseFlags(args); code != 0 {
+		return o, code
+	}
+	o.finalizePatterns()
+	return o, 0
+}
+
+// parseFlags processes command-line flags into the analyzeOpts.
+func (o *analyzeOpts) parseFlags(args []string) int {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		switch {
-		case arg == "--format" || arg == "-f":
-			i++
-			if i < len(args) { o.format = args[i] }
-		case strings.HasPrefix(arg, "--format="):
-			o.format = strings.TrimPrefix(arg, "--format=")
-		case arg == "--analyzers" || arg == "-a":
-			i++
-			if i < len(args) { o.analyzerList = args[i] }
-		case strings.HasPrefix(arg, "--analyzers="):
-			o.analyzerList = strings.TrimPrefix(arg, "--analyzers=")
-		case arg == "--rule":
-			i++
-			if i < len(args) { o.rules = append(o.rules, args[i]) }
-		case strings.HasPrefix(arg, "--rule="):
-			o.rules = append(o.rules, strings.TrimPrefix(arg, "--rule="))
-		case arg == "--min-severity":
-			i++
-			if i < len(args) { o.minSeverity = args[i] }
-		case strings.HasPrefix(arg, "--min-severity="):
-			o.minSeverity = strings.TrimPrefix(arg, "--min-severity=")
-		case arg == "--max-cyclomatic":
-			i++
-			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.maxCyc) }
-		case arg == "--max-cognitive":
-			i++
-			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.maxCog) }
-		case arg == "--min-dup-lines":
-			i++
-			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.minDup) }
-		case arg == "--dir":
-			i++
-			if i < len(args) { o.dir = args[i] }
-		case strings.HasPrefix(arg, "--dir="):
-			o.dir = strings.TrimPrefix(arg, "--dir=")
-		case arg == "--no-config":
-			o.useConfig = false
-		case arg == "--baseline":
-			o.useBaseline = true
-		case arg == "--no-suppress":
-			o.useSuppress = false
-		case strings.HasPrefix(arg, "-"):
-			fmt.Fprintf(os.Stderr, "unknown flag: %s\n", arg)
-			return o, 1
-		default:
+		handled, err := o.parseOneFlag(args, &i, arg)
+		if err {
+			return 1
+		}
+		if !handled {
 			o.patterns = append(o.patterns, arg)
 		}
 	}
+	return 0
+}
+
+// parseOneFlag parses a single flag argument. Returns (handled, hadError).
+func (o *analyzeOpts) parseOneFlag(args []string, i *int, arg string) (bool, bool) {
+	if val, ok := parseFlagValue(args, i, "--format", "-f"); ok {
+		o.format = val
+		return true, false
+	}
+	if val, ok := parseFlagEquals(arg, "--format="); ok {
+		o.format = val
+		return true, false
+	}
+	if val, ok := o.parseStringFlag(args, i, arg); val != "" || ok {
+		return true, false
+	}
+	if ok := o.parseNumericFlag(args, i, arg); ok {
+		return true, false
+	}
+	if ok := o.parseBoolFlag(arg); ok {
+		return true, false
+	}
+	if strings.HasPrefix(arg, "-") {
+		fmt.Fprintf(os.Stderr, "unknown flag: %s\n", arg)
+		return true, true
+	}
+	return false, false
+}
+
+// parseStringFlag handles string-valued flags.
+func (o *analyzeOpts) parseStringFlag(args []string, i *int, arg string) (string, bool) {
+	flags := []struct{ sep, short, long string }{
+		{"--analyzers=", "-a", "--analyzers"},
+		{"--rule=", "", "--rule"},
+		{"--min-severity=", "", "--min-severity"},
+		{"--dir=", "", "--dir"},
+	}
+	for _, f := range flags {
+		if f.short != "" {
+			if val, ok := parseFlagValue(args, i, f.short, f.long); ok {
+				o.assignString(f.long, val)
+				return val, true
+			}
+		}
+		if val, ok := parseFlagEquals(arg, f.sep); ok {
+			o.assignString(f.long, val)
+			return val, true
+		}
+	}
+	return "", false
+}
+
+// assignString sets the appropriate string field based on flag name.
+func (o *analyzeOpts) assignString(flag, val string) {
+	switch flag {
+	case "--analyzers":
+		o.analyzerList = val
+	case "--rule":
+		o.rules = append(o.rules, val)
+	case "--min-severity":
+		o.minSeverity = val
+	case "--dir":
+		o.dir = val
+	}
+}
+
+// parseNumericFlag handles numeric flags.
+func (o *analyzeOpts) parseNumericFlag(args []string, i *int, arg string) bool {
+	numericFlags := []struct {
+		name string
+		dst  *int
+	}{
+		{"--max-cyclomatic", &o.maxCyc},
+		{"--max-cognitive", &o.maxCog},
+		{"--min-dup-lines", &o.minDup},
+	}
+	for _, f := range numericFlags {
+		if val, ok := parseFlagValue(args, i, f.name); ok {
+			fmt.Sscanf(val, "%d", f.dst)
+			return true
+		}
+	}
+	return false
+}
+
+// parseBoolFlag handles boolean flags.
+func (o *analyzeOpts) parseBoolFlag(arg string) bool {
+	switch arg {
+	case "--no-config":
+		o.useConfig = false
+		return true
+	case "--baseline":
+		o.useBaseline = true
+		return true
+	case "--no-suppress":
+		o.useSuppress = false
+		return true
+	}
+	return false
+}
+
+// finalizePatterns sets default patterns and expands "." to "./...".
+func (o *analyzeOpts) finalizePatterns() {
 	if len(o.patterns) == 0 {
 		o.patterns = []string{"./..."}
 	}
-	// Expand "." to "./..." so all packages are loaded, not just the root.
 	for i, p := range o.patterns {
 		if p == "." {
 			o.patterns[i] = "./..."
 		}
 	}
-	return o, 0
+}
+
+// parseFlagValue extracts a value for a flag that takes a separate argument.
+// Returns (value, true) if the flag matched, ("", false) otherwise.
+func parseFlagValue(args []string, i *int, names ...string) (string, bool) {
+	for _, name := range names {
+		if args[*i] == name {
+			if *i+1 < len(args) {
+				*i++
+				return args[*i], true
+			}
+			return "", true
+		}
+	}
+	return "", false
+}
+
+// parseFlagEquals extracts a value from a --flag=value style argument.
+func parseFlagEquals(arg, prefix string) (string, bool) {
+	if strings.HasPrefix(arg, prefix) {
+		return strings.TrimPrefix(arg, prefix), true
+	}
+	return "", false
 }
 
 func buildAnalyzerConfig(o analyzeOpts) (analyzer.Config, int) {
@@ -333,6 +460,67 @@ func parseAllSuppressions(ctx *analyzer.Context) *suppress.Suppressions {
 		return nil
 	}
 	return sup
+}
+
+
+// ─── shared command helpers ───
+
+// formatDirOpts holds parsed --format and --dir flags.
+type formatDirOpts struct {
+	format string
+	dir    string
+}
+
+// parseFormatDir parses --format/-f and --dir flags from args.
+func parseFormatDir(args []string) formatDirOpts {
+	o := formatDirOpts{format: "text", dir: "."}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				o.format = args[i]
+			}
+		case "--dir":
+			i++
+			if i < len(args) {
+				o.dir = args[i]
+			}
+		}
+	}
+	return o
+}
+
+// loadSimple loads the codebase and returns the analysis context.
+// It uses ./... as pattern with --no-config.
+func loadSimple(dir string) (*reporter.Report, *analyzer.Context, int) {
+	rep, ctx, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	return rep, ctx, code
+}
+
+// loadResult loads the codebase with loader.Load and returns the context.
+func loadResult(dir string) (*analyzer.Context, *loader.Result, int) {
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
+		return nil, nil, 1
+	}
+	ctx := &analyzer.Context{
+		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
+		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
+	}
+	return ctx, result, 0
+}
+
+// printJSONOrText prints data as JSON or text based on format.
+func printJSONOrText(format string, jsonFn func() ([]byte, error), textFn func() string) {
+	switch format {
+	case "json":
+		data, _ := jsonFn()
+		fmt.Println(string(data))
+	default:
+		fmt.Print(textFn())
+	}
 }
 
 // ─── analyze ───
@@ -750,256 +938,136 @@ func runBaseline(args []string) int {
 // ─── health ───
 
 func runHealth(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
+	printHealthScore(o.format, rep.HealthScore)
+	return 0
+}
 
+// printHealthScore outputs the health score in text or JSON format.
+func printHealthScore(format string, hs reporter.HealthScore) {
 	switch format {
 	case "json":
-		data, _ := json.MarshalIndent(rep.HealthScore, "", "  ")
+		data, _ := json.MarshalIndent(hs, "", "  ")
 		fmt.Println(string(data))
 	default:
-		fmt.Printf("Health Score: %d/100 (grade: %s)\n", rep.HealthScore.Score, rep.HealthScore.Grade)
-		if len(rep.HealthScore.ByCategory) > 0 {
-			fmt.Println("  by category:")
-			for cat, penalty := range rep.HealthScore.ByCategory {
-				fmt.Printf("    %s: -%d\n", cat, penalty)
-			}
-		}
+		fmt.Printf("Health Score: %d/100 (grade: %s)\n", hs.Score, hs.Grade)
+		printHealthCategories(hs.ByCategory)
 	}
-	return 0
+}
+
+// printHealthCategories prints the by-category breakdown.
+func printHealthCategories(cats map[string]int) {
+	if len(cats) == 0 {
+		return
+	}
+	fmt.Println("  by category:")
+	for cat, penalty := range cats {
+		fmt.Printf("    %s: -%d\n", cat, penalty)
+	}
 }
 
 // ─── file-scores ───
 
 func runFileScores(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
-
 	scores := filescore.ScoreFiles(rep.Findings, nil)
-	switch format {
-	case "json":
-		data, _ := json.MarshalIndent(scores, "", "  ")
-		fmt.Println(string(data))
-	default:
-		fmt.Print(filescore.FormatFileScoresText(scores))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return json.MarshalIndent(scores, "", "  ") },
+		func() string { return filescore.FormatFileScoresText(scores) })
 	return 0
 }
 
 // ─── xref ───
 
 func runXRef(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
-
 	combined := xref.CrossReference(rep.Findings)
-	switch format {
-	case "json":
-		data, _ := json.MarshalIndent(combined, "", "  ")
-		fmt.Println(string(data))
-	default:
-		fmt.Print(xref.FormatXRefText(combined))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return json.MarshalIndent(combined, "", "  ") },
+		func() string { return xref.FormatXRefText(combined) })
 	return 0
 }
 
 // ─── public-api ───
 
 func runPublicAPI(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
+	o := parseFormatDir(args)
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
-	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
 	apiRep, err := publicapi.AnalyzePublicAPI(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "public-api error: %v\n", err)
 		return 1
 	}
-
-	switch format {
-	case "json":
-		data, _ := publicapi.FormatPublicAPIJSON(apiRep)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(publicapi.FormatPublicAPIText(apiRep))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return publicapi.FormatPublicAPIJSON(apiRep) },
+		func() string { return publicapi.FormatPublicAPIText(apiRep) })
 	return 0
 }
 
 // ─── coverage ───
 
 func runCoverage(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
+	o := parseFormatDir(args)
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
-	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
 	covRep, err := coverage.AnalyzeCoverage(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "coverage error: %v\n", err)
 		return 1
 	}
-
-	switch format {
-	case "json":
-		data, _ := coverage.FormatCoverageJSON(covRep)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(coverage.FormatCoverageText(covRep))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return coverage.FormatCoverageJSON(covRep) },
+		func() string { return coverage.FormatCoverageText(covRep) })
 	return 0
 }
 
 // ─── owners ───
 
 func runOwners(args []string) int {
-	format := "text"
-	dir := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
+	groups, err := loadOwnerGroups(rep.Findings, o.dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return codeowners.FormatOwnershipJSON(groups) },
+		func() string { return codeowners.FormatOwnershipText(groups) })
+	return 0
+}
 
+// loadOwnerGroups loads CODEOWNERS and groups findings by owner.
+func loadOwnerGroups(findings []analyzer.Finding, dir string) (map[string][]analyzer.Finding, error) {
 	ownersFile, err := codeowners.FindCodeOwnersFile(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "no CODEOWNERS file found: %v\n", err)
-		return 1
+		return nil, fmt.Errorf("no CODEOWNERS file found: %w", err)
 	}
-
 	owners, err := codeowners.Parse(ownersFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "parse CODEOWNERS: %v\n", err)
-		return 1
+		return nil, fmt.Errorf("parse CODEOWNERS: %w", err)
 	}
-
-	groups := codeowners.GroupByOwner(rep.Findings, owners)
-	switch format {
-	case "json":
-		data, _ := codeowners.FormatOwnershipJSON(groups)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(codeowners.FormatOwnershipText(groups))
-	}
-	return 0
+	return codeowners.GroupByOwner(findings, owners), nil
 }
 
 // ─── LSP ───
@@ -1525,84 +1593,36 @@ func runImpact(args []string) int {
 // ─── vital-signs ───
 
 func runVitalSigns(args []string) int {
-	var (
-		dir    = "."
-		format = "text"
-	)
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
-
 	scores := filescore.ScoreFiles(rep.Findings, nil)
 	stats := reporter.CodebaseStats{
 		Packages: rep.Stats.Packages, Files: rep.Stats.Files,
 		Functions: rep.Stats.Functions, Types: rep.Stats.Types, Decls: rep.Stats.Decls,
 	}
 	vs := health.ComputeVitalSigns(rep.Findings, stats, scores, 0)
-
-	switch format {
-	case "json":
-		data, _ := health.FormatVitalSignsJSON(vs)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(health.FormatVitalSignsText(vs))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return health.FormatVitalSignsJSON(vs) },
+		func() string { return health.FormatVitalSignsText(vs) })
 	return 0
 }
 
 // ─── targets ───
 
 func runTargets(args []string) int {
-	var (
-		dir    = "."
-		format = "text"
-	)
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
-		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
-		}
-	}
-
-	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	o := parseFormatDir(args)
+	rep, _, code := loadSimple(o.dir)
 	if code != 0 {
 		return code
 	}
-
 	scores := filescore.ScoreFiles(rep.Findings, nil)
 	targets := health.ComputeRefactoringTargets(rep.Findings, scores)
-
-	switch format {
-	case "json":
-		data, _ := health.FormatTargetsJSON(targets)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(health.FormatTargetsText(targets))
-	}
+	printJSONOrText(o.format,
+		func() ([]byte, error) { return health.FormatTargetsJSON(targets) },
+		func() string { return health.FormatTargetsText(targets) })
 	return 0
 }
 
