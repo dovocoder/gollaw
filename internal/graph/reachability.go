@@ -1,3 +1,4 @@
+//gollaw:keep
 package graph
 
 import "sort"
