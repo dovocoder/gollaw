@@ -36,10 +36,16 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 				lineCount := end.Line - start.Line + 1
 				stmtCount := countStatements(fn.Body)
 
-				// Flag if BOTH line count AND statement count exceed thresholds.
-				// This avoids false positives from functions with many comments,
-				// blank lines, or verbose flag declarations (cobra constructors).
-				if lineCount > maxLines && stmtCount > maxStmts {
+				// Flag if EITHER line count OR statement count exceeds threshold.
+				// Statement count catches functions with real complexity even if
+				// they're short in lines (dense code). Line count catches functions
+				// with many comments/blank lines that are still hard to read.
+				// We skip functions flagged ONLY by line count when the statement
+				// count is very low (≤10) — that's almost certainly comments or
+				// verbose struct literals, not real complexity.
+				isLarge := lineCount > maxLines && stmtCount > 10 ||
+					stmtCount > maxStmts
+				if isLarge {
 					findings = append(findings, Finding{
 						Analyzer:   a.Name(),
 						Category:   a.Category(),

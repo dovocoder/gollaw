@@ -48,10 +48,16 @@ func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Fi
 	return findings
 }
 
-// checkFeatureGates scans for os.Getenv and flag.X() calls used as runtime gates.
-// Only flags env vars that are used in conditional branches (if/switch), not
-// env vars used as config values (assigned to variables, passed to functions).
+// checkFeatureGates scans for os.Getenv and flag.X() calls used as runtime
+// feature gates. Only flags calls that appear within a conditional expression
+// (if/switch/for condition), not calls used as config values (assignments,
+// function arguments, struct fields).
 func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) []Finding {
+	// Collect all condition expressions in the file — these are the
+	// Cond of IfStmt, Tag of SwitchStmt, and Cond of ForStmt.
+	// A feature gate call is only flagged if it appears within one of these.
+	conditions := collectConditionExprs(file)
+
 	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -70,32 +76,48 @@ func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) [
 		if !isFeatureGateCall(ident.Name, fn) {
 			return true
 		}
-		// Only flag if the Getenv result is used directly in a condition
-		// (if/switch/for), not when assigned to a variable or passed as arg.
-		if !isUsedInCondition(call) {
-			return true
+		// Only flag if the call is within a condition expression.
+		callPos := call.Pos()
+		for _, cond := range conditions {
+			if callPos >= cond.Pos() && callPos <= cond.End() {
+				findings = append(findings, a.checkFeatureGateArgs(ctx, call, ident.Name, fn)...)
+				break
+			}
 		}
-		findings = append(findings, a.checkFeatureGateArgs(ctx, call, ident.Name, fn)...)
 		return true
 	})
 	return findings
 }
 
-// isUsedInCondition returns true if the call expression is used directly
-// in a conditional (if/switch/for) rather than as a config value.
-func isUsedInCondition(call *ast.CallExpr) bool {
-	// Walk up the parent chain to see if we're in an if/switch/for condition.
-	// Since ast.Inspect doesn't give us parent pointers, we check if the
-	// call is the entire condition of an if/switch/for statement.
-	// This is a heuristic — we check if the call is directly compared
-	// (==, !=) or used in a boolean context.
-	//
-	// For simplicity, we only flag os.Getenv calls that are directly
-	// compared to a string literal (e.g., os.Getenv("FOO") == "bar")
-	// or checked for emptiness (os.Getenv("FOO") != "").
-	// This misses some real feature flags but avoids false positives on
-	// config-value env vars.
-	return false
+// collectConditionExprs returns all expressions used as conditions in
+// if/switch/for statements in the file. These are the expressions where
+// a feature gate actually gates code — an os.Getenv in an assignment is
+// a config value, not a gate.
+func collectConditionExprs(file *ast.File) []ast.Expr {
+	var conds []ast.Expr
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.IfStmt:
+			if s.Cond != nil {
+				conds = append(conds, s.Cond)
+			}
+		case *ast.SwitchStmt:
+			if s.Tag != nil {
+				conds = append(conds, s.Tag)
+			}
+		case *ast.ForStmt:
+			if s.Cond != nil {
+				conds = append(conds, s.Cond)
+			}
+		case *ast.CaseClause:
+			// case expressions in a switch are also conditions
+			for _, expr := range s.List {
+				conds = append(conds, expr)
+			}
+		}
+		return true
+	})
+	return conds
 }
 
 // isFeatureGateCall returns true for os.Getenv and flag.Bool/String/Int calls.

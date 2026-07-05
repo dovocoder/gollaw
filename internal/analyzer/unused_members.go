@@ -1,7 +1,13 @@
 package analyzer
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // unusedMembersAnalyzer finds unused struct fields and interface methods with no implementations.
@@ -209,36 +215,81 @@ func countImplementations(ctx *Context, methodName string) int {
 			}
 		}
 	}
-	// Also check if the interface is used as a struct field or parameter type
-	// — if so, it likely has a test/mock implementation that we can't see.
+	// If no implementation found in non-test code, scan test files in the
+	// same directory for implementations. This is needed because the loader
+	// doesn't load test files (Tests: false), but a test-only mock/fake
+	// is a legitimate implementation — the interface isn't unused.
 	if count == 0 {
-		for _, pkg := range ctx.TypesByPkg {
-			scope := pkg.Scope()
-			for _, name := range scope.Names() {
-				obj := scope.Lookup(name)
-				st, ok := obj.Type().(*types.Named)
-				if !ok {
-					continue
-				}
-				underlying, ok := st.Underlying().(*types.Struct)
-				if !ok {
-					continue
-				}
-				for i := 0; i < underlying.NumFields(); i++ {
-					f := underlying.Field(i)
-					// Check if the field type is this interface
-					if named, ok := f.Type().(*types.Named); ok {
-						if iface, ok := named.Underlying().(*types.Interface); ok {
-							for j := 0; j < iface.NumMethods(); j++ {
-								if iface.Method(j).Name() == methodName {
-									count++
-								}
-							}
-						}
-					}
-				}
+		count += countTestImplementations(ctx, methodName)
+	}
+	return count
+}
+
+// countTestImplementations scans _test.go files adjacent to the interface
+// definition for concrete types implementing the method. This uses a
+// lightweight AST scan (no type checking) — we look for method declarations
+// matching the method name in test files.
+func countTestImplementations(ctx *Context, methodName string) int {
+	// Collect all directories that contain Go source files.
+	// For each directory, check if _test.go files exist and scan them.
+	testDirs := make(map[string]bool)
+	for _, files := range ctx.SyntaxByPkg {
+		for _, file := range files {
+			pos := ctx.FSET.Position(file.Pos())
+			if pos.Filename == "" {
+				continue
 			}
+			dir := filepath.Dir(pos.Filename)
+			testDirs[dir] = true
+		}
+	}
+
+	count := 0
+	for dir := range testDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			path := filepath.Join(dir, name)
+			count += scanTestFileForMethod(path, methodName)
 		}
 	}
 	return count
+}
+
+// scanTestFileForMethod parses a test file and returns 1 if it contains a
+// method declaration with the given method name.
+func scanTestFileForMethod(path, methodName string) int {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	if err != nil {
+		return 0
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		// Must be a method (has receiver) — interface implementations
+		// are always methods.
+		if fn.Recv == nil || len(fn.Recv.List) == 0 {
+			continue
+		}
+		if fn.Name.Name == methodName {
+			return 1
+		}
+	}
+	return 0
 }

@@ -36,12 +36,9 @@ func (a *thinWrapperAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 // Skips cobra command constructors and their RunE closures,
 // which are inherently thin wrappers by design.
 // Also skips common Go patterns that are thin wrappers by design:
-//   - Methods with receivers (OOP-style API on top of package functions)
 //   - Error predicates (IsXxx wrapping errors.Is/errors.As)
 //   - Exported wrappers around unexported (Open → open, encapsulation)
 //   - Logger interface implementations (Errorf, Warnf, Infof, Debugf)
-//   - Factory/config helpers (DefaultXxx, newXxxTableWriter, etc.)
-//   - Wrappers around stdlib (filepath.Join, strings.ToLower, etc.)
 //   - Row-to-struct converters (xxxFromGetRow → xxxFromScalars)
 func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 	var fns []*ast.FuncDecl
@@ -57,12 +54,6 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				if isCobraConstructor(fn) {
 					continue
 				}
-				// Skip methods (functions with a receiver) — in Go, methods
-				// on a struct that delegate to package-level functions are a
-				// standard OOP-style API pattern, not a code smell.
-				if fn.Recv != nil && len(fn.Recv.List) > 0 {
-					continue
-				}
 				// Skip error predicates (IsXxx wrapping errors.Is/As).
 				if isErrorPredicate(fn) {
 					continue
@@ -74,11 +65,6 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				}
 				// Skip logger interface implementations.
 				if isLoggerMethod(fn) {
-					continue
-				}
-				// Skip wrappers around stdlib package functions
-				// (filepath.Join, strings.ToLower, fmt.Errorf, etc.)
-				if isStdlibWrapper(fn) {
 					continue
 				}
 				// Skip row-to-struct converters (xxxFromYyyRow → xxxFromScalars)
@@ -98,10 +84,6 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				if isDefaultParameterWrapper(fn) {
 					continue
 				}
-				// Skip third-party adapter wrappers (term.IsTerminal, tabwriter.NewWriter)
-				if isThirdPartyWrapper(fn) {
-					continue
-				}
 				// Skip semantic aliases (FileURI → String, canonicalJIDString → String)
 				if isSemanticAlias(fn) {
 					continue
@@ -118,10 +100,17 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 	return fns
 }
 
-// isErrorPredicate returns true if the function is named IsXxx and its body
-// is a single return of an errors.Is or errors.As call.
+// isErrorPredicate returns true if the function is named IsXxx/isXxx and its
+// body is a single return of an errors.Is, errors.As, or other boolean
+// predicate call.
 func isErrorPredicate(fn *ast.FuncDecl) bool {
-	if !strings.HasPrefix(fn.Name.Name, "Is") || fn.Body == nil {
+	name := fn.Name.Name
+	// Match both IsXxx (exported) and isXxx (unexported) — Go convention
+	// for boolean predicate functions.
+	if !strings.HasPrefix(name, "Is") && !strings.HasPrefix(name, "is") {
+		return false
+	}
+	if fn.Body == nil {
 		return false
 	}
 	stmts := fn.Body.List
@@ -140,10 +129,14 @@ func isErrorPredicate(fn *ast.FuncDecl) bool {
 	if !ok {
 		return false
 	}
+	// errors.Is, errors.As
 	if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "errors" {
 		return sel.Sel.Name == "Is" || sel.Sel.Name == "As"
 	}
-	return false
+	// term.IsTerminal and similar boolean predicates from third-party
+	// packages — if the called function starts with "Is" and returns
+	// a bool, this is a predicate wrapper.
+	return strings.HasPrefix(sel.Sel.Name, "Is")
 }
 
 // isExportedWrapperOfUnexported returns true if the function is exported
@@ -191,6 +184,8 @@ func isExportedWrapperOfUnexported(fn *ast.FuncDecl) bool {
 // isLoggerMethod returns true if the function name matches common logger
 // interface method names (Errorf, Warnf, Infof, Debugf, Error, Warn, Info,
 // Debug, Fatal, Fatalf, Print, Printf, Println).
+// Also matches emit/warning delegate methods (emitXxxWarning → emitWarning)
+// which are semantic aliases for log/warning levels.
 func isLoggerMethod(fn *ast.FuncDecl) bool {
 	name := fn.Name.Name
 	switch name {
@@ -200,58 +195,31 @@ func isLoggerMethod(fn *ast.FuncDecl) bool {
 		"Print", "Printf", "Println":
 		return true
 	}
-	return false
-}
-
-// stdlibPackages is the set of stdlib packages whose wrappers are common
-// Go patterns and should not be flagged as thin wrappers.
-var stdlibPackages = map[string]bool{
-	"fmt":        true,
-	"strings":    true,
-	"strconv":    true,
-	"path":       true,
-	"path/filepath": true,
-	"os":         true,
-	"errors":     true,
-	"context":    true,
-	"sort":       true,
-	"time":       true,
-	"syscall":    true,
-	"net":        true,
-	"net/url":    true,
-	"unicode":    true,
-	"unicode/utf8": true,
-}
-
-// isStdlibWrapper returns true if the function body's single call is to a
-// stdlib package function (e.g., filepath.Join, strings.ToLower, fmt.Errorf).
-func isStdlibWrapper(fn *ast.FuncDecl) bool {
-	if fn.Body == nil {
-		return false
-	}
-	stmts := fn.Body.List
-	if len(stmts) < 1 || len(stmts) > 2 {
-		return false
-	}
-	// Check all calls in the body
-	var calls []*ast.CallExpr
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			calls = append(calls, call)
+	// Match emit/warning delegate methods — functions whose name contains
+	// "emit" or "warning" that delegate to another emit/warning function.
+	// e.g., emitChatStateWarning → a.emitWarning
+	if strings.Contains(strings.ToLower(name), "emit") ||
+		strings.Contains(strings.ToLower(name), "warning") {
+		if fn.Body == nil {
+			return false
 		}
-		return true
-	})
-	if len(calls) == 0 {
-		return false
-	}
-	// If the primary call is to a stdlib package function, skip
-	for _, call := range calls {
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-			if pkg, ok := sel.X.(*ast.Ident); ok {
-				if stdlibPackages[pkg.Name] {
-					return true
+		var foundEmit bool
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					called := strings.ToLower(sel.Sel.Name)
+					if strings.Contains(called, "emit") ||
+						strings.Contains(called, "warning") ||
+						strings.Contains(called, "warn") {
+						foundEmit = true
+						return false
+					}
 				}
 			}
+			return true
+		})
+		if foundEmit {
+			return true
 		}
 	}
 	return false
@@ -379,33 +347,6 @@ func isDefaultParameterWrapper(fn *ast.FuncDecl) bool {
 		}
 	}
 	return false
-}
-
-// isThirdPartyWrapper returns true if the function wraps a call to a
-// third-party package function (e.g., term.IsTerminal, tabwriter.NewWriter,
-// sender.SendPoll). These are adapter patterns, not code smells.
-func isThirdPartyWrapper(fn *ast.FuncDecl) bool {
-	if fn.Body == nil {
-		return false
-	}
-	var found bool
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-				if pkg, ok := sel.X.(*ast.Ident); ok {
-					// Common third-party package prefixes
-					switch pkg.Name {
-					case "term", "tabwriter", "sender", "cli", "flag",
-						"color", "tablewriter", "readline", "promptui":
-						found = true
-						return false
-					}
-				}
-			}
-		}
-		return true
-	})
-	return found
 }
 
 // isSemanticAlias returns true if the function is a semantic alias — a
