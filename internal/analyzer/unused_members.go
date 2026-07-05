@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"go/types"
-	"strings"
 )
 
 // unusedMembersAnalyzer finds unused struct fields and interface methods with no implementations.
@@ -210,32 +209,32 @@ func countImplementations(ctx *Context, methodName string) int {
 			}
 		}
 	}
-	// Also check test packages — interfaces are often implemented only
-	// in tests (mocks/fakes). If we found implementations in test packages,
-	// the interface is not unused.
+	// Also check if the interface is used as a struct field or parameter type
+	// — if so, it likely has a test/mock implementation that we can't see.
 	if count == 0 {
-		for _, pkg := range ctx.Packages {
-			if pkg.TypesInfo == nil {
-				continue
-			}
-			// Check if this is a test package
-			if !strings.HasSuffix(pkg.PkgPath, "_test") {
-				continue
-			}
-			scope := pkg.Types.Scope()
+		for _, pkg := range ctx.TypesByPkg {
+			scope := pkg.Scope()
 			for _, name := range scope.Names() {
 				obj := scope.Lookup(name)
-				named, ok := obj.Type().(*types.Named)
+				st, ok := obj.Type().(*types.Named)
 				if !ok {
 					continue
 				}
-				if _, ok := named.Underlying().(*types.Interface); ok {
+				underlying, ok := st.Underlying().(*types.Struct)
+				if !ok {
 					continue
 				}
-				for i := 0; i < named.NumMethods(); i++ {
-					if named.Method(i).Name() == methodName {
-						count++
-						break
+				for i := 0; i < underlying.NumFields(); i++ {
+					f := underlying.Field(i)
+					// Check if the field type is this interface
+					if named, ok := f.Type().(*types.Named); ok {
+						if iface, ok := named.Underlying().(*types.Interface); ok {
+							for j := 0; j < iface.NumMethods(); j++ {
+								if iface.Method(j).Name() == methodName {
+									count++
+								}
+							}
+						}
 					}
 				}
 			}
