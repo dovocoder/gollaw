@@ -32,7 +32,7 @@ func (a *thinWrapperAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 
 // collectFunctions gathers all function declarations with 1–3 statements
 // in their body (candidates for thin wrapper detection).
-// Skips cobra command constructors (newXxxCmd) and their RunE closures,
+// Skips cobra command constructors and their RunE closures,
 // which are inherently thin wrappers by design.
 func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 	var fns []*ast.FuncDecl
@@ -60,18 +60,14 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 	return fns
 }
 
-// isCobraConstructor returns true if the function is a cobra command
-// constructor (newXxxCmd pattern) or a RunE/Run closure inside one.
+// isCobraConstructor returns true if the function body contains an actual
+// cobra.Command struct literal. We do NOT match by name (newXxxCmd) because
+// that pattern is too broad — only skip when we have concrete evidence of
+// cobra usage in the function body.
 func isCobraConstructor(fn *ast.FuncDecl) bool {
-	if fn.Name == nil {
+	if fn.Body == nil {
 		return false
 	}
-	name := fn.Name.Name
-	// newXxxCmd pattern
-	if len(name) > 6 && name[:3] == "new" && len(name) > 3 && name[len(name)-3:] == "Cmd" {
-		return true
-	}
-	// Check if the function body contains cobra.Command construction
 	for _, stmt := range fn.Body.List {
 		if containsCobraCommand(stmt) {
 			return true
