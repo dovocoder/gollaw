@@ -40,7 +40,7 @@ type AuditSummary struct {
 
 // RunAudit runs a PR audit against the given base ref.
 func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Finding, dir string) (*AuditReport, error) {
-	changedFiles, err := getChangedFiles(baseRef, dir)
+	changedFiles, err := GetChangedFiles(baseRef, dir)
 	if err != nil {
 		return nil, fmt.Errorf("get changed files: %w", err)
 	}
@@ -105,7 +105,7 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 	}, nil
 }
 
-func getChangedFiles(baseRef, dir string) ([]string, error) {
+func GetChangedFiles(baseRef, dir string) ([]string, error) {
 	cmd := exec.Command("git", "diff", "--name-only", baseRef+"...HEAD")
 	cmd.Dir = dir
 	output, err := cmd.Output()

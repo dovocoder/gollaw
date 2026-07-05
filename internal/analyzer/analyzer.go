@@ -75,6 +75,13 @@ func NewRegistry() *Registry {
 	r.Register(newUnusedFilesAnalyzer())
 	r.Register(newThinWrapperAnalyzer())
 	r.Register(newChurnAnalyzer())
+	r.Register(newBoundaryCoverageAnalyzer())
+	r.Register(newFeatureFlagsAnalyzer())
+	r.Register(newUnusedMembersAnalyzer())
+	r.Register(newReExportCyclesAnalyzer())
+	r.Register(newUnusedOverridesAnalyzer())
+	r.Register(newDeadFlagsAnalyzer())
+	r.Register(newAPISurfaceAnalyzer())
 	return r
 }
 

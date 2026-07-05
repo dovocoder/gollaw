@@ -63,8 +63,24 @@ func NewReporter(format string) (Reporter, error) {
 		return &textReporter{}, nil
 	case "sarif":
 		return &sarifReporter{}, nil
+	case "codeclimate":
+		return &codeClimateReporter{}, nil
+	case "compact":
+		return &compactReporter{}, nil
+	case "grouped":
+		return &groupedReporter{}, nil
+	case "markdown":
+		return &markdownReporter{}, nil
+	case "pr-decision":
+		return &prDecisionReporter{}, nil
+	case "pr-summary":
+		return &prSummaryReporter{}, nil
+	case "impact":
+		return &impactReporter{}, nil
+	case "next-steps":
+		return &nextStepsReporter{}, nil
 	default:
-		return nil, fmt.Errorf("unknown format: %s (use json, text, or sarif)", format)
+		return nil, fmt.Errorf("unknown format: %s (use json, text, sarif, codeclimate, compact, grouped, markdown, pr-decision, pr-summary, impact, or next-steps)", format)
 	}
 }
 
@@ -321,4 +337,124 @@ func sarifLevel(sev analyzer.Severity) string {
 	default:
 		return "note"
 	}
+}
+
+// --- CodeClimate Reporter ---
+
+type codeClimateReporter struct{}
+
+func (r *codeClimateReporter) Format() string { return "codeclimate" }
+
+func (r *codeClimateReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatCodeClimate(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- Compact Reporter ---
+
+type compactReporter struct{}
+
+func (r *compactReporter) Format() string { return "compact" }
+
+func (r *compactReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatCompact(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- Grouped Reporter ---
+
+type groupedReporter struct{}
+
+func (r *groupedReporter) Format() string { return "grouped" }
+
+func (r *groupedReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatGrouped(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- Markdown Reporter ---
+
+type markdownReporter struct{}
+
+func (r *markdownReporter) Format() string { return "markdown" }
+
+func (r *markdownReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatMarkdown(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- PR Decision Reporter ---
+
+type prDecisionReporter struct{}
+
+func (r *prDecisionReporter) Format() string { return "pr-decision" }
+
+func (r *prDecisionReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatPRDecision(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- PR Summary Reporter ---
+
+type prSummaryReporter struct{}
+
+func (r *prSummaryReporter) Format() string { return "pr-summary" }
+
+func (r *prSummaryReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatPRSummary(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- Impact Reporter ---
+
+type impactReporter struct{}
+
+func (r *impactReporter) Format() string { return "impact" }
+
+func (r *impactReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatImpact(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// --- Next Steps Reporter ---
+
+type nextStepsReporter struct{}
+
+func (r *nextStepsReporter) Format() string { return "next-steps" }
+
+func (r *nextStepsReporter) Write(w io.Writer, report *Report) error {
+	data, err := FormatNextSteps(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
 }

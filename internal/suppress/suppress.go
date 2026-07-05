@@ -131,6 +131,14 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 	return sup, nil
 }
 
+// Entries returns all parsed suppression entries.
+func (s *Suppressions) Entries() []SuppressionEntry {
+	if s == nil {
+		return nil
+	}
+	return s.entries
+}
+
 // parseDeclComment checks a doc comment block for suppression directives
 // and records them for the declaration at declPos.
 func (s *Suppressions) parseDeclComment(fset *token.FileSet, doc *ast.CommentGroup, declPos token.Pos) {

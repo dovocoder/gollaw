@@ -1,0 +1,38 @@
+package reporter
+
+import (
+	"bytes"
+	"fmt"
+	"sort"
+
+	"github.com/dovocoder/gollaw/internal/analyzer"
+)
+
+// FormatGrouped renders findings grouped by file, with category tags per finding.
+// Files are sorted alphabetically; findings within a file are sorted by line.
+func FormatGrouped(report *Report) ([]byte, error) {
+	byFile := make(map[string][]analyzer.Finding)
+	for _, f := range report.Findings {
+		byFile[f.File] = append(byFile[f.File], f)
+	}
+
+	files := make([]string, 0, len(byFile))
+	for file := range byFile {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+
+	var buf bytes.Buffer
+	for _, file := range files {
+		fns := byFile[file]
+		sort.Slice(fns, func(i, j int) bool { return fns[i].Line < fns[j].Line })
+
+		fmt.Fprintf(&buf, "%s (%d findings)\n", file, len(fns))
+		for _, f := range fns {
+			fmt.Fprintf(&buf, "  [%s] %s\n", f.Category, f.Message)
+		}
+		fmt.Fprintf(&buf, "\n")
+	}
+
+	return buf.Bytes(), nil
+}

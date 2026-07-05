@@ -3,214 +3,192 @@
 > Whole-codebase intelligence for Go — like Fallow, but for Go.
 
 Gollaw analyzes an entire Go codebase using the compiler's own semantic model
-(`go/packages`, `go/types`, `go/ssa`, `go/ast`) to surface dead code, unused
-exports, complexity hotspots, duplication, dependency cycles, security issues,
-naming violations, architecture violations, coverage gaps, and more — all from
-a single tool with JSON output designed for AI agents.
+(`go/packages`, `go/types`, `go/ssa`, `go/ast`) to find dead code, unused exports,
+complexity hotspots, duplication, architecture violations, security issues, and more.
 
-## Quick start
+## Quick Start
 
 ```bash
 go install github.com/dovocoder/gollaw@latest
-
-# Analyze current project
 gollaw analyze ./...
-
-# PR audit — only changed files, with verdict
-gollaw audit --base-ref origin/main
-
-# JSON output for AI agents
-gollaw analyze ./... --format json
-
-# Only specific analyzers
-gollaw analyze ./... --analyzers deadcode,complexity,duplication
-
-# Architecture rules
-gollaw analyze ./... --rule "internal/store must not import internal/api"
 ```
 
-## Commands
+## Analyzers (21)
 
-| Command | Description |
-|---------|-------------|
-| `analyze` | Run analyzers on a Go codebase |
-| `audit` | PR audit: analyze changed files vs base ref, give verdict |
-| `guard` | Pre-edit architecture guidance for a file |
-| `explain` | Explain why a symbol is unused/dead |
-| `trace` | Trace callers/callees of a symbol |
-| `baseline` | Save or diff against a findings baseline |
-| `health` | Get project health score |
-| `file-scores` | Per-file health scores |
-| `xref` | Cross-reference findings (e.g. duplicate + dead) |
-| `public-api` | Analyze public API surface |
-| `coverage` | Test coverage gap analysis |
-| `owners` | Group findings by CODEOWNERS |
-| `init` | Create .gollaw.yaml config file |
-| `list` | List available analyzers |
-| `lsp` | Start LSP server (editor integration) |
-| `mcp` | Start MCP server (AI agent integration) |
-| `watch` | Watch for file changes and re-analyze |
-
-## Analyzers (14)
-
-| Analyzer | What it finds |
-|----------|--------------|
+| Analyzer | Description |
+|----------|-------------|
 | `deadcode` | Unreachable functions via SSA call graph |
-| `unused` | Unused exported identifiers |
-| `complexity` | Cyclomatic + cognitive complexity hotspots |
-| `duplication` | Duplicate code blocks (AST-based clone detection) |
-| `dependencies` | Import cycles and dependency hygiene |
+| `unused` | Exported identifiers never used outside their package |
+| `complexity` | Cyclomatic and cognitive complexity hotspots |
+| `duplication` | Duplicate code blocks via AST structural hashing |
+| `dependencies` | Import graph cycles and dependency hygiene |
 | `architecture` | Architecture boundary violations |
 | `unused-deps` | go.mod dependencies that are never imported |
 | `large-functions` | Functions exceeding a line-count threshold |
-| `hotspots` | Files with high complexity density (maintenance risk areas) |
-| `security` | Hardcoded secrets, TODO/FIXME comments, unsafe usage, SQL injection |
-| `naming` | Go naming convention violations (snake_case, ALL_CAPS, initialisms) |
+| `hotspots` | Files with high complexity density |
+| `security` | Hardcoded secrets, TODO/FIXME, unsafe usage, SQL injection |
+| `naming` | Go naming convention violations |
 | `unused-files` | Go files not part of any loaded package |
 | `thin-wrappers` | Functions that just delegate to a single call |
-| `churn` | Files with high git churn (frequent changes = maintenance hotspots) |
+| `churn` | Files with high git churn |
+| `boundary-coverage` | Packages not covered by any architecture rule |
+| `feature-flags` | Build tags and feature gates that may guard dead code |
+| `unused-members` | Unused struct fields and interface methods with no implementations |
+| `re-export-cycles` | Re-export cycles between packages |
+| `unused-overrides` | Unused replace directives in go.mod |
+| `dead-flags` | Unused constants and flag registrations |
+| `api-surface` | Intentional public API vs accidental exports |
 
-## Output formats
+## Commands
 
-- `text` (default) — human-readable
-- `json` — structured, for AI agents and CI
-- `sarif` — SARIF 2.1.0 for GitHub Code Scanning
-- `markdown` — for PR comments (audit command)
+### Analysis
+```bash
+gollaw analyze ./...                          # Full analysis
+gollaw analyze ./... --format json            # JSON output
+gollaw analyze ./... --format sarif           # SARIF for CI
+gollaw analyze ./... --format codeclimate     # CodeClimate/GitLab format
+gollaw analyze ./... --format compact         # One-line per finding
+gollaw analyze ./... --format grouped         # Grouped by file
+gollaw analyze ./... --format markdown        # Full markdown report
+gollaw analyze ./... --format pr-decision     # PR pass/fail with gates
+gollaw analyze ./... --format pr-summary      # PR comment markdown
+gollaw analyze ./... --format impact          # Impact report
+gollaw analyze ./... --format next-steps      # Actionable recommendations
+gollaw analyze ./... --analyzers deadcode     # Run specific analyzers
+gollaw analyze ./... --rule "pkgA must not import pkgB"  # Architecture rules
+gollaw list                                   # List all analyzers
+```
 
-## Config file
+### Workflow
+```bash
+gollaw audit --base-ref origin/main           # PR audit mode
+gollaw guard <file.go> --rule "..."           # Pre-edit guidance
+gollaw explain <symbol>                       # Why is this unused/dead?
+gollaw trace <symbol> --direction callers     # Call chain tracing
+gollaw fix --dry-run                          # Preview auto-fixes
+gollaw fix --analyzer deadcode                # Apply fixes
+gollaw inspect <file|symbol>                  # Interactive inspection
+gollaw regression --tolerance 5               # Baseline comparison
+gollaw walkthrough                            # Guided codebase tour
+```
 
-Create `.gollaw.yaml` in your project root (or run `gollaw init`):
+### Health & Metrics
+```bash
+gollaw vital-signs                            # Project-wide metrics
+gollaw file-scores                            # Per-file health scores
+gollaw targets                                # Refactoring targets
+gollaw trends --save                          # Save snapshot + view trends
+gollaw timings                                # Analyzer execution times
+gollaw impact --base-ref origin/main          # Impact analysis
+gollaw health                                 # Health score summary
+```
+
+### Cross-Reference & API
+```bash
+gollaw xref                                   # Cross-reference findings
+gollaw public-api                             # Public API surface analysis
+gollaw coverage                               # Test coverage gaps
+gollaw owners                                 # Group findings by CODEOWNERS
+```
+
+### Baseline & Suppressions
+```bash
+gollaw baseline save                          # Save baseline snapshot
+gollaw baseline diff                          # Show only new findings
+# Inline: //gollaw:keep or //gollaw:ignore analyzer-name
+```
+
+### Configuration
+```bash
+gollaw init                                   # Create .gollaw.yaml
+gollaw rule-pack list                         # List rule packs
+gollaw rule-pack apply clean-architecture     # Apply a rule pack
+gollaw rule-pack show hexagonal               # Show pack details
+gollaw migrate --from golangci                # Migrate from golangci-lint
+```
+
+### Integrations
+```bash
+gollaw lsp                                    # Start LSP server (stdio)
+gollaw mcp                                    # Start MCP server (stdio)
+gollaw watch                                  # Continuous analysis on file changes
+```
+
+## Configuration (`.gollaw.yaml`)
 
 ```yaml
 analyzers:
-  enabled: []  # empty = all
-  disabled: [naming]  # disable specific analyzers
-
+  enabled: [deadcode, unused, complexity]
+  disabled: []
 thresholds:
   max-cyclomatic: 15
   max-cognitive: 20
   max-function-lines: 50
   min-dup-lines: 6
-
 rules:
   - "internal/store must not import internal/api"
   - "internal/cli must not import internal/analyzer"
-
 ignore:
   - "vendor/**"
   - "**/*_test.go"
-
+  - "**/testdata/**"
 severity:
   min: hint
+rule_packs:
+  - name: clean-architecture
+    enabled: true
+plugins:
+  - name: custom-check
+    path: ./bin/custom-check
+    enabled: true
 ```
 
-## Suppressions
+## Rule Packs
 
-Inline suppression comments:
+Built-in architecture rule packs:
+- **clean-architecture** — domain/usecase/infrastructure boundaries
+- **hexagonal** — ports/adapters isolation
+- **microservice** — API/store/repo separation
+- **library** — no internal cycles
+- **monolith** — standard layered architecture
 
-```go
-//gollaw:keep
-func legacyHandler() { ... }  // suppress deadcode/unused
+## MCP Tools (23)
 
-//gollaw:ignore complexity
-func complexButIntentional() { ... }  // suppress specific analyzer
+The MCP server exposes Gollaw as tools for AI agents:
+`gollaw_analyze`, `gollaw_audit`, `gollaw_guard`, `gollaw_baseline_save`,
+`gollaw_baseline_diff`, `gollaw_public_api`, `gollaw_coverage`,
+`gollaw_file_scores`, `gollaw_xref`, `gollaw_dupes`, `gollaw_security`,
+`gollaw_impact`, `gollaw_inspect`, `gollaw_list_boundaries`,
+`gollaw_project_info`, `gollaw_check_changed`, `gollaw_suppress`,
+`gollaw_owners`, `gollaw_fix_preview`, `gollaw_explain`, `gollaw_trace`,
+`gollaw_health`, `gollaw_list_analyzers`.
 
-//gollaw:ignore-all
-// suppresses all findings in this file
-```
+## LSP Server
 
-## Baseline mode
-
-Store a snapshot and only see new issues:
-
-```bash
-gollaw baseline save     # snapshot current findings
-gollaw baseline diff     # show only new findings since baseline
-gollaw analyze --baseline  # analyze + only show new issues
-```
-
-## PR audit
-
-Analyze only changed files, with attribution:
-
-```bash
-gollaw audit --base-ref origin/main
-gollaw audit --base-ref origin/main --format markdown  # for PR comments
-gollaw audit --base-ref origin/main --format json      # for CI pipelines
-```
-
-Verdict: **pass** (no new critical/warning), **warn** (new warnings), **fail** (new critical).
-
-## Editor integration (LSP)
-
-```bash
-gollaw lsp  # start LSP server over stdio
-```
-
-Add to VS Code `settings.json`:
-```json
-{
-  "gollaw.path": "/path/to/gollaw",
-  "gollaw.enable": true
-}
-```
-
-## AI agent integration (MCP)
-
-```bash
-gollaw mcp  # start MCP server over stdio
-```
-
-Exposes tools: `gollaw_analyze`, `gollaw_list_analyzers`, `gollaw_explain`,
-`gollaw_trace`, `gollaw_health`.
+Editor integration with:
+- Live diagnostics on file open/change
+- Code actions (quick-fix: remove dead code, add suppression)
+- Code lens (complexity per function)
+- Markdown hover with finding details
+- Suppression support (`//gollaw:keep`)
 
 ## GitHub Action
 
-Use in your CI workflow:
-
 ```yaml
-- uses: dovocoder/gollaw@v1
-  with:
-    base-ref: origin/main
-    format: markdown
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- uses: actions/setup-go@v5
+  with: { go-version: '1.23' }
+- run: go install github.com/dovocoder/gollaw@latest
+- run: gollaw audit --base-ref origin/main --format markdown
 ```
 
-Or see `.github/workflows/gollaw.yml` for a complete workflow.
-
-## Health score
-
-Gollaw computes a 0-100 health score from a weighted blend of all analyzers,
-giving a single number for tracking codebase quality over time. Per-file scores
-are also available via `gollaw file-scores`.
-
-## Cross-reference analysis
+## Installation
 
 ```bash
-gollaw xref  # find overlapping findings from different analyzers
+go install github.com/dovocoder/gollaw@latest
 ```
 
-Detects patterns like:
-- **duplicate-and-dead**: duplicated code that is also unreachable
-- **duplicate-and-unused**: duplicated code that is also unused
-- **complex-and-large**: functions that are both complex and long
-- **security-and-dead**: security issues in dead code
+## License
 
-## Public API analysis
-
-```bash
-gollaw public-api
-```
-
-Classifies exports as:
-- **Confirmed public API** — used by external importers
-- **Accidental exports** — only used within own package (should be unexported)
-- **Unused exports** — not used anywhere
-
-## Coverage analysis
-
-```bash
-gollaw coverage
-```
-
-Finds functions with no test coverage — functions that have no corresponding
-`TestXxx` function and are not called from any test.
+MIT

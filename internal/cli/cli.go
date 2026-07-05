@@ -17,14 +17,22 @@ import (
 	"github.com/dovocoder/gollaw/internal/coverage"
 	"github.com/dovocoder/gollaw/internal/explain"
 	"github.com/dovocoder/gollaw/internal/filescore"
+	"github.com/dovocoder/gollaw/internal/fix"
+	"github.com/dovocoder/gollaw/internal/graph"
 	"github.com/dovocoder/gollaw/internal/guard"
+	"github.com/dovocoder/gollaw/internal/health"
+	"github.com/dovocoder/gollaw/internal/inspect"
 	"github.com/dovocoder/gollaw/internal/lsp"
 	"github.com/dovocoder/gollaw/internal/loader"
 	"github.com/dovocoder/gollaw/internal/mcp"
+	"github.com/dovocoder/gollaw/internal/migrate"
 	"github.com/dovocoder/gollaw/internal/publicapi"
+	"github.com/dovocoder/gollaw/internal/regression"
 	"github.com/dovocoder/gollaw/internal/reporter"
+	"github.com/dovocoder/gollaw/internal/rulepack"
 	"github.com/dovocoder/gollaw/internal/suppress"
 	"github.com/dovocoder/gollaw/internal/trace"
+	"github.com/dovocoder/gollaw/internal/walkthrough"
 	"github.com/dovocoder/gollaw/internal/watch"
 	"github.com/dovocoder/gollaw/internal/xref"
 )
@@ -76,6 +84,28 @@ func Run(args []string) int {
 		return runWatchCmd(args[1:])
 	case "init":
 		return runInit(args[1:])
+	case "fix":
+		return runFix(args[1:])
+	case "inspect":
+		return runInspect(args[1:])
+	case "migrate":
+		return runMigrate(args[1:])
+	case "regression":
+		return runRegression(args[1:])
+	case "walkthrough":
+		return runWalkthrough(args[1:])
+	case "rule-pack":
+		return runRulePack(args[1:])
+	case "impact":
+		return runImpact(args[1:])
+	case "vital-signs":
+		return runVitalSigns(args[1:])
+	case "targets":
+		return runTargets(args[1:])
+	case "trends":
+		return runTrends(args[1:])
+	case "timings":
+		return runTimings(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -1169,6 +1199,540 @@ func parseSeverity(s string) (analyzer.Severity, error) {
 		return "", fmt.Errorf("invalid severity: %s (use critical, warning, info, or hint)", s)
 	}
 }
+
+// ─── fix ───
+
+func runFix(args []string) int {
+	var (
+		dir         = "."
+		analyzerName string
+		dryRun      = false
+		format      = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--analyzer":
+			i++
+			if i < len(args) {
+				analyzerName = args[i]
+			}
+		case "--dry-run":
+			dryRun = true
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	report, err := fix.RunFix(dir, analyzerName, dryRun)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fix error: %v\n", err)
+		return 1
+	}
+
+	switch format {
+	case "json":
+		data, _ := fix.FormatFixJSON(report)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(fix.FormatFixText(report))
+	}
+	return 0
+}
+
+// ─── inspect ───
+
+func runInspect(args []string) int {
+	var (
+		target string
+		dir    = "."
+		format = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		default:
+			if !strings.HasPrefix(args[i], "-") {
+				target = args[i]
+			}
+		}
+	}
+
+	if target == "" {
+		fmt.Fprintln(os.Stderr, "usage: gollaw inspect <file|symbol>")
+		return 1
+	}
+
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
+		return 1
+	}
+
+	ctx := &analyzer.Context{
+		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
+		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
+	}
+
+	inspectResult, err := inspect.Inspect(ctx, target, dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "inspect error: %v\n", err)
+		return 1
+	}
+
+	switch format {
+	case "json":
+		data, _ := inspect.FormatInspectJSON(inspectResult)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(inspect.FormatInspectText(inspectResult))
+	}
+	return 0
+}
+
+// ─── migrate ───
+
+func runMigrate(args []string) int {
+	var (
+		source = ""
+		dir    = "."
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--from":
+			i++
+			if i < len(args) {
+				source = args[i]
+			}
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		}
+	}
+
+	result, err := migrate.Migrate(source, dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "migrate error: %v\n", err)
+		return 1
+	}
+
+	fmt.Print(migrate.FormatMigrateText(result))
+	return 0
+}
+
+// ─── regression ───
+
+func runRegression(args []string) int {
+	var (
+		dir       = "."
+		tolerance = 0
+		format    = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--tolerance":
+			i++
+			if i < len(args) {
+				fmt.Sscanf(args[i], "%d", &tolerance)
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	result, err := regression.RunRegression(dir, tolerance)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "regression error: %v\n", err)
+		return 1
+	}
+
+	switch format {
+	case "json":
+		data, _ := regression.FormatRegressionJSON(result)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(regression.FormatRegressionText(result))
+	}
+
+	if result.Outcome == "fail" {
+		return 1
+	}
+	return 0
+}
+
+// ─── walkthrough ───
+
+func runWalkthrough(args []string) int {
+	var (
+		dir    = "."
+		format = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	if code != 0 {
+		return code
+	}
+
+	wt := walkthrough.GenerateWalkthrough(rep.Findings, rep.Stats)
+	switch format {
+	case "json":
+		data, _ := walkthrough.FormatWalkthroughJSON(wt)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(walkthrough.FormatWalkthroughText(wt))
+	}
+	return 0
+}
+
+// ─── rule-pack ───
+
+func runRulePack(args []string) int {
+	if len(args) < 1 {
+		packs := rulepack.ListPacks()
+		fmt.Print(rulepack.FormatPacksText(packs))
+		return 0
+	}
+
+	switch args[0] {
+	case "list":
+		packs := rulepack.ListPacks()
+		fmt.Print(rulepack.FormatPacksText(packs))
+		return 0
+	case "apply":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: gollaw rule-pack apply <name>")
+			return 1
+		}
+		dir := "."
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--dir" && i+1 < len(args) {
+				dir = args[i+1]
+				i++
+			}
+		}
+		if err := rulepack.ApplyPack(args[1], dir); err != nil {
+			fmt.Fprintf(os.Stderr, "apply error: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Rule pack %q applied to .gollaw.yaml\n", args[1])
+		return 0
+	case "show":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: gollaw rule-pack show <name>")
+			return 1
+		}
+		pack, err := rulepack.GetPack(args[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+		packs := []rulepack.RulePack{*pack}
+		fmt.Print(rulepack.FormatPacksText(packs))
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "unknown rule-pack command: %s\n", args[0])
+		return 1
+	}
+}
+
+// ─── impact ───
+
+func runImpact(args []string) int {
+	var (
+		dir        = "."
+		format     = "text"
+		baseRef    = ""
+		changedOnly = false
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		case "--base-ref":
+			i++
+			if i < len(args) {
+				baseRef = args[i]
+				changedOnly = true
+			}
+		}
+	}
+
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
+		return 1
+	}
+
+	ctx := &analyzer.Context{
+		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
+		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
+	}
+
+	g := graph.BuildGraph(ctx)
+
+	var changedFiles []string
+	if changedOnly && baseRef != "" {
+		changedFiles, _ = audit.GetChangedFiles(baseRef, dir)
+	}
+
+	impactRep := graph.BuildImpactReport(g, changedFiles)
+	switch format {
+	case "json":
+		data, _ := graph.FormatImpactJSON(impactRep)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(graph.FormatImpactText(impactRep))
+	}
+	return 0
+}
+
+// ─── vital-signs ───
+
+func runVitalSigns(args []string) int {
+	var (
+		dir    = "."
+		format = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	if code != 0 {
+		return code
+	}
+
+	scores := filescore.ScoreFiles(rep.Findings, nil)
+	stats := reporter.CodebaseStats{
+		Packages: rep.Stats.Packages, Files: rep.Stats.Files,
+		Functions: rep.Stats.Functions, Types: rep.Stats.Types, Decls: rep.Stats.Decls,
+	}
+	vs := health.ComputeVitalSigns(rep.Findings, stats, scores, 0)
+
+	switch format {
+	case "json":
+		data, _ := health.FormatVitalSignsJSON(vs)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(health.FormatVitalSignsText(vs))
+	}
+	return 0
+}
+
+// ─── targets ───
+
+func runTargets(args []string) int {
+	var (
+		dir    = "."
+		format = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	if code != 0 {
+		return code
+	}
+
+	scores := filescore.ScoreFiles(rep.Findings, nil)
+	targets := health.ComputeRefactoringTargets(rep.Findings, scores)
+
+	switch format {
+	case "json":
+		data, _ := health.FormatTargetsJSON(targets)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(health.FormatTargetsText(targets))
+	}
+	return 0
+}
+
+// ─── trends ───
+
+func runTrends(args []string) int {
+	var (
+		dir    = "."
+		format = "text"
+		save   = false
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		case "--save":
+			save = true
+		}
+	}
+
+	if save {
+		rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+		if code != 0 {
+			return code
+		}
+		scores := filescore.ScoreFiles(rep.Findings, nil)
+		stats := reporter.CodebaseStats{
+			Packages: rep.Stats.Packages, Files: rep.Stats.Files,
+			Functions: rep.Stats.Functions, Types: rep.Stats.Types, Decls: rep.Stats.Decls,
+		}
+		vs := health.ComputeVitalSigns(rep.Findings, stats, scores, 0)
+		if err := health.SaveSnapshot(dir, vs); err != nil {
+			fmt.Fprintf(os.Stderr, "save snapshot: %v\n", err)
+			return 1
+		}
+		fmt.Println("Snapshot saved.")
+		return 0
+	}
+
+	result, err := health.LoadTrends(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load trends: %v\n", err)
+		return 1
+	}
+
+	switch format {
+	case "json":
+		data, _ := health.FormatTrendsJSON(result)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(health.FormatTrendsText(result))
+	}
+	return 0
+}
+
+// ─── timings ───
+
+func runTimings(args []string) int {
+	var (
+		dir    = "."
+		format = "text"
+	)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--format", "-f":
+			i++
+			if i < len(args) {
+				format = args[i]
+			}
+		}
+	}
+
+	timer := health.NewTimer()
+	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
+		return 1
+	}
+
+	ctx := &analyzer.Context{
+		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
+		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
+	}
+
+	registry := analyzer.NewRegistry()
+	for _, a := range registry.All() {
+		findings, err := a.Analyze(ctx)
+		if err != nil {
+			continue
+		}
+		timer.Record(a.Name(), len(findings))
+	}
+
+	timingReport := timer.Report()
+	switch format {
+	case "json":
+		data, _ := health.FormatTimingsJSON(timingReport)
+		fmt.Println(string(data))
+	default:
+		fmt.Print(health.FormatTimingsText(timingReport))
+	}
+	return 0
+}
+
+// ─── filterBySeverity ───
 
 var severityOrder = map[analyzer.Severity]int{
 	analyzer.SeverityCritical: 0,
