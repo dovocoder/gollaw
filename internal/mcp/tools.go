@@ -4,6 +4,7 @@ import "encoding/json"
 
 // toolDefs returns the full list of MCP tool definitions.
 // Extracted from handleToolsList to keep server.go focused on protocol handling.
+//gollaw:keep
 func toolDefs() []toolDef {
 	return []toolDef{
 		{

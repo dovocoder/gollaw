@@ -13,6 +13,7 @@ import (
 )
 
 // CoverageGap describes a function that lacks test coverage.
+//gollaw:keep
 type CoverageGap struct {
 	Function   string `json:"function"`
 	File       string `json:"file"`
@@ -22,6 +23,7 @@ type CoverageGap struct {
 }
 
 // CoverageReport summarises test coverage gaps across the codebase.
+//gollaw:keep
 type CoverageReport struct {
 	TotalFunctions   int            `json:"totalFunctions"`
 	TestedFunctions  int            `json:"testedFunctions"`

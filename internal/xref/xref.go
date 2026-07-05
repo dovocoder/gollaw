@@ -11,6 +11,7 @@ import (
 )
 
 // CombinedFinding represents overlapping findings from multiple analyzers.
+//gollaw:keep
 type CombinedFinding struct {
 	Findings   []analyzer.Finding `json:"findings"`
 	Kind       string             `json:"kind"`

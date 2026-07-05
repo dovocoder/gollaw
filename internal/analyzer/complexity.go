@@ -124,6 +124,7 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 	return complexity
 }
 
+//gollaw:keep
 // cognitiveComplexity approximates Cognitive Complexity (SonarSource style).
 func cognitiveComplexity(fn *ast.FuncDecl) int {
 	complexity := 0

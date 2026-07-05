@@ -72,12 +72,12 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="v${{ github.event.inputs.version }}"
+            VERSION="${{ github.event.inputs.version }}"
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Building version $VERSION"
+          echo "VERSION=v${VERSION}" >> $GITHUB_ENV
+          echo "Building version v${VERSION}"
 
       - name: Build binary
         shell: bash

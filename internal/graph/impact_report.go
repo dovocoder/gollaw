@@ -9,6 +9,7 @@ import (
 )
 
 // ImpactReport is a comprehensive impact analysis for a set of changed files.
+//gollaw:keep
 type ImpactReport struct {
 	ChangedPackages   []string
 	AffectedPackages  []string

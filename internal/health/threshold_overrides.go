@@ -9,6 +9,7 @@ import (
 )
 
 // ThresholdOverride holds per-package threshold overrides.
+//gollaw:keep
 type ThresholdOverride struct {
 	Package         string `yaml:"package"         json:"package"`
 	MaxCyclomatic   int    `yaml:"max-cyclomatic"  json:"maxCyclomatic"`
@@ -18,6 +19,7 @@ type ThresholdOverride struct {
 }
 
 // ThresholdConfig holds all threshold configuration including per-package overrides.
+//gollaw:keep
 type ThresholdConfig struct {
 	Overrides             []ThresholdOverride `yaml:"overrides" json:"overrides"`
 	DefaultMaxCyclomatic  int                 `yaml:"default-max-cyclomatic" json:"defaultMaxCyclomatic"`
@@ -32,6 +34,7 @@ type thresholdsFile struct {
 }
 
 // DefaultThresholdConfig returns sensible default thresholds.
+//gollaw:keep
 func DefaultThresholdConfig() *ThresholdConfig {
 	return &ThresholdConfig{
 		Overrides:               nil,
@@ -44,6 +47,7 @@ func DefaultThresholdConfig() *ThresholdConfig {
 
 // LoadThresholds reads threshold configuration from a .gollaw.yaml file.
 // If the file doesn't exist or has no thresholds section, defaults are returned.
+//gollaw:keep
 func LoadThresholds(configPath string) (*ThresholdConfig, error) {
 	if configPath == "" {
 		return DefaultThresholdConfig(), nil
@@ -85,6 +89,7 @@ func LoadThresholds(configPath string) (*ThresholdConfig, error) {
 // GetThreshold returns the threshold value for a given package and kind.
 // kind is one of: "max-cyclomatic", "max-cognitive", "max-function-lines", "min-dup-lines".
 // If a per-package override exists, it's used; otherwise the default is returned.
+//gollaw:keep
 func GetThreshold(t *ThresholdConfig, pkgPath string, kind string) int {
 	if t == nil {
 		return 0
@@ -154,6 +159,7 @@ func thresholdFromDefault(t *ThresholdConfig, kind string) int {
 
 // ValidateThresholds checks the threshold configuration and returns a list of
 // warning strings for any invalid thresholds.
+//gollaw:keep
 func ValidateThresholds(t *ThresholdConfig) []string {
 	var warnings []string
 

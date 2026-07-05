@@ -76,6 +76,7 @@ func collectPackageMember(ssaPkg *ssa.Package, member ssa.Member, collect func(*
 
 // collectMethodSet collects all methods in the method set of a type
 // that belong to the given package.
+//gollaw:keep
 func collectMethodSet(ssaPkg *ssa.Package, recvType types.Type, collect func(*ssa.Function)) {
 	ms := ssaPkg.Prog.MethodSets.MethodSet(recvType)
 	for i := 0; i < ms.Len(); i++ {
@@ -231,6 +232,7 @@ func isExportedSSA(fn *ssa.Function) bool {
 	return false
 }
 
+//gollaw:keep
 func recvTypeName(t interface{}) string {
 	if n, ok := t.(interface {
 		Obj() interface{ Name() string }
@@ -245,6 +247,7 @@ func recvTypeName(t interface{}) string {
 	return ""
 }
 
+//gollaw:keep
 func isTestFunction(fn *ssa.Function) bool {
 	name := fn.Name()
 	return len(name) > 4 && (name[:4] == "Test" || name[:4] == "Bench" || name[:4] == "Fuzz" || name == "TestMain")

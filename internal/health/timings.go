@@ -9,6 +9,7 @@ import (
 )
 
 // TimingEntry records the duration and finding count for a single analyzer.
+//gollaw:keep
 type TimingEntry struct {
 	Analyzer     string `json:"analyzer"`
 	Duration     string `json:"duration"`     // e.g. "125ms"
@@ -16,6 +17,7 @@ type TimingEntry struct {
 }
 
 // TimingReport summarizes all analyzer timings.
+//gollaw:keep
 type TimingReport struct {
 	Entries         []TimingEntry `json:"entries"`
 	TotalDuration   string        `json:"totalDuration"`
@@ -30,6 +32,7 @@ type timerEntry struct {
 }
 
 // Timer tracks timing for multiple analyzers.
+//gollaw:keep
 type Timer struct {
 	start   time.Time
 	entries []timerEntry

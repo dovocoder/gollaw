@@ -26,6 +26,7 @@ type Explanation struct {
 }
 
 // CallNode is a single node in a call chain.
+//gollaw:keep
 type CallNode struct {
 	Function string `json:"function"`
 	Location string `json:"location"` // file:line

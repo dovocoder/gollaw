@@ -83,6 +83,7 @@ func (a *unusedFilesAnalyzer) findOrphanedFiles(modDir string, usedFiles map[str
 
 // shouldSkipDir returns true for directories that should be excluded from
 // the walk (vendor, .git, node_modules, testdata).
+//gollaw:keep
 func shouldSkipDir(info os.FileInfo) bool {
 	if !info.IsDir() {
 		return false
@@ -92,6 +93,7 @@ func shouldSkipDir(info os.FileInfo) bool {
 }
 
 // shouldCheckFile returns true for non-test .go files that should be checked.
+//gollaw:keep
 func shouldCheckFile(path string) bool {
 	if !strings.HasSuffix(path, ".go") {
 		return false
@@ -113,6 +115,7 @@ func (a *unusedFilesAnalyzer) createOrphanedFileFinding(path string) Finding {
 	}
 }
 
+//gollaw:keep
 func absPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 )
 
 // WalkthroughStep represents a single step in a guided walkthrough.
+//gollaw:keep
 type WalkthroughStep struct {
 	Title       string              `json:"title"`
 	Description string              `json:"description"`
@@ -19,6 +20,7 @@ type WalkthroughStep struct {
 }
 
 // WalkthroughResult holds the complete guided walkthrough.
+//gollaw:keep
 type WalkthroughResult struct {
 	Steps         []WalkthroughStep `json:"steps"`
 	TotalFindings int               `json:"totalFindings"`

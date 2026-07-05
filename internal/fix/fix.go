@@ -12,6 +12,7 @@ import (
 )
 
 // FixReport summarises a fix run.
+//gollaw:keep
 type FixReport struct {
 	Analyzer   string      `json:"analyzer"`
 	TotalFixes int         `json:"totalFixes"`
@@ -21,6 +22,7 @@ type FixReport struct {
 }
 
 // FixChange represents a single suggested or applied fix.
+//gollaw:keep
 type FixChange struct {
 	File        string `json:"file"`
 	Line        int    `json:"line"`

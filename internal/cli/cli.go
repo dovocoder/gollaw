@@ -1,3 +1,4 @@
+//gollaw:keep
 package cli
 
 import (

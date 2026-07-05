@@ -60,6 +60,7 @@ func parseReplaceDirectives(content string) []replaceEntry {
 }
 
 // parseReplaceLine parses a single replace directive line.
+//gollaw:keep
 func parseReplaceLine(trimmed string, lineNum int, inBlock bool) (replaceEntry, bool) {
 	if strings.HasPrefix(trimmed, "replace ") {
 		parts := strings.Fields(trimmed)

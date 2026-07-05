@@ -198,11 +198,15 @@ func (s *server) run() error {
 }
 
 // ─── JSON-RPC delegation ───────────────────────────────────────────────
+//gollaw:keep
 func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
+//gollaw:keep
 func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
+//gollaw:keep
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
 	s.conn.SendResponse(id, result)
 }
+//gollaw:keep
 func (s *server) sendError(id json.RawMessage, code int, message string) {
 	s.conn.SendError(id, code, message)
 }

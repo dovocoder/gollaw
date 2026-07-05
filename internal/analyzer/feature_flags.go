@@ -75,6 +75,7 @@ func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) [
 }
 
 // isFeatureGateCall returns true for os.Getenv and flag.Bool/String/Int calls.
+//gollaw:keep
 func isFeatureGateCall(pkgName, fnName string) bool {
 	if pkgName == "os" && fnName == "Getenv" {
 		return true

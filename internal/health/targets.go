@@ -11,6 +11,7 @@ import (
 )
 
 // RefactoringTarget is a recommendation for a file or function that needs attention.
+//gollaw:keep
 type RefactoringTarget struct {
 	File          string          `json:"file"`
 	Function      string          `json:"function,omitempty"`
@@ -23,6 +24,7 @@ type RefactoringTarget struct {
 }
 
 // TargetEvidence is a single piece of evidence supporting a refactoring target.
+//gollaw:keep
 type TargetEvidence struct {
 	Kind        string `json:"kind"`
 	Description string `json:"description"`

@@ -14,6 +14,7 @@ import (
 )
 
 // GuardReport is the result of checking a file against architecture rules.
+//gollaw:keep
 type GuardReport struct {
 	FilePath        string            `json:"filePath"`
 	Exists          bool             `json:"exists"`
@@ -23,6 +24,7 @@ type GuardReport struct {
 }
 
 // GuardRule wraps an analyzer.Rule with display metadata.
+//gollaw:keep
 type GuardRule struct {
 	Rule        analyzer.Rule `json:"rule"`
 	Severity    string        `json:"severity"`

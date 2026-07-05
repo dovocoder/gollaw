@@ -11,6 +11,7 @@ import (
 
 // FormatMarkdown renders a full markdown report with summary table, health score,
 // findings by category (collapsible), and findings by file.
+//gollaw:keep
 func FormatMarkdown(report *Report) ([]byte, error) {
 	var buf bytes.Buffer
 

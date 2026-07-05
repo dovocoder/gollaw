@@ -12,6 +12,7 @@ import (
 )
 
 // RegressionResult holds the result of a regression check.
+//gollaw:keep
 type RegressionResult struct {
 	BaselineCount   int            `json:"baselineCount"`
 	CurrentCount    int            `json:"currentCount"`

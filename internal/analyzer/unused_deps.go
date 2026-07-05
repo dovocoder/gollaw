@@ -79,6 +79,7 @@ func parseRequireDirectives(content string) map[string]string {
 
 // processRequireLine processes a single line of go.mod, updating the
 // inRequireBlock state and the required map. Returns the new block state.
+//gollaw:keep
 func processRequireLine(line string, inRequireBlock bool, required map[string]string) bool {
 	if strings.HasPrefix(line, "require ") || strings.HasPrefix(line, "require\t") {
 		rest := strings.TrimSpace(strings.TrimPrefix(line, "require"))
@@ -185,6 +186,7 @@ func (a *unusedDepsAnalyzer) createUnusedDepFinding(goModPath, modPath, version 
 	}
 }
 
+//gollaw:keep
 func parseRequireLine(line string, required map[string]string) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "(") || strings.HasPrefix(line, ")") {
@@ -197,6 +199,7 @@ func parseRequireLine(line string, required map[string]string) {
 	}
 }
 
+//gollaw:keep
 func findGoModDir(dir string) string {
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {

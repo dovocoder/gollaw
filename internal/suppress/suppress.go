@@ -26,6 +26,7 @@ type Suppressions struct {
 }
 
 // SuppressionEntry records a single suppression comment and its metadata.
+//gollaw:keep
 type SuppressionEntry struct {
 	File     string
 	Line     int // line of the comment
@@ -36,6 +37,7 @@ type SuppressionEntry struct {
 }
 
 // StaleSuppression represents a suppression that no longer matches any finding.
+//gollaw:keep
 type StaleSuppression struct {
 	File     string
 	Line     int
@@ -218,6 +220,7 @@ func (s *Suppressions) addDeclIgnore(fileName string, declLine int, analyzerName
 }
 
 // IsSuppressed checks whether a finding is suppressed by any directive.
+//gollaw:keep
 func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 	if sup == nil {
 		return false

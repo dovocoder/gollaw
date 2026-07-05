@@ -10,6 +10,7 @@ import (
 )
 
 // FileStats holds per-file statistics.
+//gollaw:keep
 type FileStats struct {
 	LineCount  int
 	FuncCount  int
@@ -17,6 +18,7 @@ type FileStats struct {
 }
 
 // FileStatsMap maps file paths to their stats.
+//gollaw:keep
 type FileStatsMap map[string]FileStats
 
 // FileHealthScore is the health score for a single file.
