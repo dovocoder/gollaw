@@ -92,8 +92,8 @@ func shouldSkipDir(info os.FileInfo) bool {
 }
 
 // shouldCheckFile returns true for non-test .go files that should be checked.
-// Skips platform-specific files (e.g., _windows.go, _darwin.go, _linux.go)
-// that are excluded by build constraints on the current platform.
+// Skips platform-specific files — either by filename suffix (e.g.,
+// _windows.go, _darwin.go) or by //go:build constraint in the file header.
 func shouldCheckFile(path string) bool {
 	if !strings.HasSuffix(path, ".go") {
 		return false
@@ -101,8 +101,7 @@ func shouldCheckFile(path string) bool {
 	if strings.HasSuffix(path, "_test.go") {
 		return false
 	}
-	// Skip platform-specific files — they're not orphaned, just built
-	// on a different OS/architecture.
+	// Skip platform-specific files by filename suffix.
 	base := filepath.Base(path)
 	for _, suffix := range []string{
 		"_windows.go", "_darwin.go", "_linux.go", "_freebsd.go",
@@ -114,13 +113,37 @@ func shouldCheckFile(path string) bool {
 			return false
 		}
 	}
-	// Skip files with build constraints that exclude them from the current
-	// platform (e.g., //go:build !cgo). We can't fully parse build constraints
-	// here, but we can check for common patterns in the filename.
-	if base == "cgo_required.go" {
+	// Skip files with //go:build constraints that target a specific
+	// platform — they're not orphaned, just built on a different OS/arch.
+	if hasPlatformBuildConstraint(path) {
 		return false
 	}
 	return true
+}
+
+// hasPlatformBuildConstraint reads the first few lines of the file and
+// checks for a //go:build or // +build constraint. Any build constraint
+// means the file is conditionally compiled — it's not orphaned, just
+// excluded from the current build configuration.
+func hasPlatformBuildConstraint(path string) bool {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	// Only check the first 10 lines — build constraints must be near
+	// the top of the file, before the package clause.
+	lines := strings.Split(string(src), "\n")
+	maxLines := 10
+	if len(lines) < maxLines {
+		maxLines = len(lines)
+	}
+	for i := 0; i < maxLines; i++ {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, "//go:build") || strings.HasPrefix(line, "// +build") {
+			return true
+		}
+	}
+	return false
 }
 
 // createOrphanedFileFinding builds a Finding for a single orphaned file.

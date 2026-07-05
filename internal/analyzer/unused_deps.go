@@ -3,6 +3,8 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -104,7 +106,9 @@ func processRequireLine(line string, inRequireBlock bool, required map[string]st
 }
 
 // collectImportedModules gathers all imported module paths from both AST
-// imports and package-level imports.
+// imports and package-level imports. Also scans platform-specific .go files
+// that are not loaded by go/packages on the current platform (e.g.,
+// _windows.go on Linux) to avoid false-positive unused-dep findings.
 func (a *unusedDepsAnalyzer) collectImportedModules(ctx *Context) map[string]bool {
 	imported := make(map[string]bool)
 	for _, files := range ctx.SyntaxByPkg {
@@ -129,7 +133,64 @@ func (a *unusedDepsAnalyzer) collectImportedModules(ctx *Context) map[string]boo
 			imported[imp.PkgPath] = true
 		}
 	}
+
+	// Scan platform-specific .go files that go/packages didn't load.
+	// These files may import modules that appear unused on the current
+	// platform but are actually needed on other platforms.
+	a.scanPlatformSpecificImports(ctx, imported)
+
 	return imported
+}
+
+// scanPlatformSpecificImports walks the module directory and parses
+// import statements from .go files that were not loaded by go/packages
+// (i.e., platform-specific files with build constraints for other OSes).
+func (a *unusedDepsAnalyzer) scanPlatformSpecificImports(ctx *Context, imported map[string]bool) {
+	modDir := findModuleDirFromPackages(ctx)
+	if modDir == "" {
+		return
+	}
+	// Build a set of files already loaded by go/packages.
+	loadedFiles := make(map[string]bool)
+	for _, pkg := range ctx.Packages {
+		for _, f := range pkg.GoFiles {
+			loadedFiles[absPath(f)] = true
+		}
+	}
+	// Walk the module directory and parse imports from un-loaded .go files.
+	filepath.Walk(modDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			if info != nil && info.IsDir() && shouldSkipDir(info) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		abs := absPath(path)
+		if loadedFiles[abs] {
+			return nil
+		}
+		// Parse imports from this file.
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, src, parser.ImportsOnly)
+		if err != nil {
+			return nil
+		}
+		for _, imp := range file.Imports {
+			p := strings.Trim(imp.Path.Value, `"`)
+			if !strings.Contains(p, ".") {
+				continue
+			}
+			imported[p] = true
+		}
+		return nil
+	})
 }
 
 // findUnusedDependencies compares required modules against imported modules
