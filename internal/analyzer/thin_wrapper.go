@@ -448,13 +448,15 @@ func detectThinWrapper(stmts []ast.Stmt) (string, bool) {
 
 // detectSingleStmtWrapper checks a single statement for a wrapping call.
 // Returns ("", false) if the call arguments contain function literals
-// (closures) or nested calls — those are composition, not thin wrappers.
+// (closures) or nested calls, or if the call is a method call on a
+// composite literal (struct construction) — those are composition, not
+// thin wrappers.
 func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
 		if len(s.Results) == 1 {
 			if call, ok := s.Results[0].(*ast.CallExpr); ok {
-				if hasComplexArgs(call) {
+				if hasComplexArgs(call) || isCallOnCompositeLiteral(call) {
 					return "", false
 				}
 				return callExprName(call), true
@@ -462,13 +464,41 @@ func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 		}
 	case *ast.ExprStmt:
 		if call, ok := s.X.(*ast.CallExpr); ok {
-			if hasComplexArgs(call) {
+			if hasComplexArgs(call) || isCallOnCompositeLiteral(call) {
 				return "", false
 			}
 			return callExprName(call), true
 		}
 	}
 	return "", false
+}
+
+// isCallOnCompositeLiteral returns true if the call is a method call on
+// a composite literal (struct construction). For example:
+//   (&url.URL{Scheme: "file", Path: path}).String()
+// This is not a thin wrapper — the function constructs a value and calls
+// a method on it, which is composition.
+func isCallOnCompositeLiteral(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	return containsCompositeLiteral(sel.X)
+}
+
+// containsCompositeLiteral checks if an expression contains a composite
+// literal (struct construction), unwrapping parentheses and unary
+// operators as needed.
+func containsCompositeLiteral(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.CompositeLit:
+		return true
+	case *ast.ParenExpr:
+		return containsCompositeLiteral(e.X)
+	case *ast.UnaryExpr:
+		return containsCompositeLiteral(e.X)
+	}
+	return false
 }
 
 // hasComplexArgs returns true if any argument of the call is a function
