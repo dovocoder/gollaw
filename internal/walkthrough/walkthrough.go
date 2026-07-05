@@ -12,104 +12,92 @@ import (
 
 // walkthroughStep represents a single step in a guided walkthrough.
 type walkthroughStep struct {
-	Title       string              `json:"title"`
-	Description string              `json:"description"`
-	Findings    []analyzer.Finding  `json:"findings"`
-	Action      string              `json:"action"`
+	Title       string             `json:"title"`
+	Description string             `json:"description"`
+	Findings    []analyzer.Finding `json:"findings"`
+	Action      string             `json:"action"`
 }
 
 // walkthroughResult holds the complete guided walkthrough.
 type walkthroughResult struct {
-	Steps         []walkthroughStep `json:"steps"`
-	TotalFindings int               `json:"totalFindings"`
-	EstimatedTime string            `json:"estimatedTime"`
+	Steps          []walkthroughStep `json:"steps"`
+	TotalFindings  int               `json:"totalFindings"`
+	EstimatedTime  string            `json:"estimatedTime"`
+}
+
+// appendStep adds a walkthrough step to the result if findings is non-empty.
+func appendStep(steps []walkthroughStep, title, desc, action string, findings []analyzer.Finding) []walkthroughStep {
+	if len(findings) == 0 {
+		return steps
+	}
+	return append(steps, walkthroughStep{
+		Title:       title,
+		Description: desc,
+		Findings:    findings,
+		Action:      action,
+	})
 }
 
 // GenerateWalkthrough creates a structured walkthrough from findings and
 // codebase stats. Steps are ordered by priority and skip empty categories.
 func GenerateWalkthrough(findings []analyzer.Finding, stats reporter.CodebaseStats) *walkthroughResult {
-	result := &walkthroughResult{
-		Steps: []walkthroughStep{},
-	}
+	healthScore := reporter.ScoreFromPenalty(reporter.ComputePenalty(findings))
+	result := &walkthroughResult{Steps: []walkthroughStep{}}
 
-	// Step 1: Health Overview — always included.
-	healthScore := computeHealthScore(findings)
-	grade := computeGrade(healthScore)
 	result.Steps = append(result.Steps, walkthroughStep{
 		Title:       "Health Overview",
-		Description: fmt.Sprintf("Codebase: %d packages, %d files, %d functions, %d types. Health score: %d/100 (grade: %s).", stats.Packages, stats.Files, stats.Functions, stats.Types, healthScore, grade),
-		Findings:    nil,
-		Action:      "Review the overall health score and identify areas for improvement.",
+		Description: fmt.Sprintf("Codebase: %d packages, %d files, %d functions, %d types. Health score: %d/100 (grade: %s).",
+			stats.Packages, stats.Files, stats.Functions, stats.Types, healthScore, computeGrade(healthScore)),
+		Action: "Review the overall health score and identify areas for improvement.",
 	})
 
-	// Step 2: Critical Issues — all critical findings.
-	criticalFindings := filterBySeverity(findings, analyzer.SeverityCritical)
-	if len(criticalFindings) > 0 {
-		result.Steps = append(result.Steps, walkthroughStep{
-			Title:       "Critical Issues",
-			Description: fmt.Sprintf("%d critical findings that should be addressed immediately.", len(criticalFindings)),
-			Findings:    criticalFindings,
-			Action:      "Fix critical issues before anything else — these may indicate bugs or security risks.",
-		})
-	}
+	result.Steps = appendConditionalSteps(result.Steps, findings)
 
-	// Step 3: Dead Code — deadcode findings.
-	deadCodeFindings := filterByAnalyzer(findings, "deadcode")
-	if len(deadCodeFindings) > 0 {
-		result.Steps = append(result.Steps, walkthroughStep{
-			Title:       "Dead Code",
-			Description: fmt.Sprintf("%d unreachable functions detected.", len(deadCodeFindings)),
-			Findings:    deadCodeFindings,
-			Action:      "Remove dead code to reduce maintenance burden and improve clarity.",
-		})
-	}
-
-	// Step 4: Complexity Hotspots — complexity findings.
-	complexityFindings := filterByCategory(findings, analyzer.CategoryComplexity)
-	if len(complexityFindings) > 0 {
-		result.Steps = append(result.Steps, walkthroughStep{
-			Title:       "Complexity Hotspots",
-			Description: fmt.Sprintf("%d functions with high cyclomatic or cognitive complexity.", len(complexityFindings)),
-			Findings:    complexityFindings,
-			Action:      "Refactor complex functions — break them into smaller, focused units.",
-		})
-	}
-
-	// Step 5: Duplication — duplication findings.
-	duplicationFindings := filterByCategory(findings, analyzer.CategoryDuplication)
-	if len(duplicationFindings) > 0 {
-		result.Steps = append(result.Steps, walkthroughStep{
-			Title:       "Duplication",
-			Description: fmt.Sprintf("%d duplicate code blocks detected.", len(duplicationFindings)),
-			Findings:    duplicationFindings,
-			Action:      "Extract duplicated logic into shared helpers or utilities.",
-		})
-	}
-
-	// Step 6: Security Review — security findings.
-	securityFindings := filterByAnalyzer(findings, "security")
-	if len(securityFindings) > 0 {
-		result.Steps = append(result.Steps, walkthroughStep{
-			Title:       "Security Review",
-			Description: fmt.Sprintf("%d security-related findings.", len(securityFindings)),
-			Findings:    securityFindings,
-			Action:      "Review security findings carefully and apply recommended mitigations.",
-		})
-	}
-
-	// Step 7: Next Steps — always included.
-	nextStepsAction := buildNextStepsAction(findings)
 	result.Steps = append(result.Steps, walkthroughStep{
 		Title:       "Next Steps",
 		Description: "Recommendations for ongoing code quality improvement.",
-		Findings:    nil,
-		Action:      nextStepsAction,
+		Action:      buildNextStepsAction(findings),
 	})
 
 	result.TotalFindings = len(findings)
 	result.EstimatedTime = estimateTime(findings)
-
 	return result
+}
+
+// appendConditionalSteps appends steps for critical, dead-code, complexity,
+// duplication, and security findings — skipping empty categories.
+func appendConditionalSteps(steps []walkthroughStep, findings []analyzer.Finding) []walkthroughStep {
+	critical := filterBySeverity(findings, analyzer.SeverityCritical)
+	steps = appendStep(steps, "Critical Issues",
+		fmt.Sprintf("%d critical findings that should be addressed immediately.", len(critical)),
+		"Fix critical issues before anything else — these may indicate bugs or security risks.",
+		critical)
+
+	deadCode := filterByAnalyzer(findings, "deadcode")
+	steps = appendStep(steps, "Dead Code",
+		fmt.Sprintf("%d unreachable functions detected.", len(deadCode)),
+		"Remove dead code to reduce maintenance burden and improve clarity.",
+		deadCode)
+
+	complexity := filterByCategory(findings, analyzer.CategoryComplexity)
+	steps = appendStep(steps, "Complexity Hotspots",
+		fmt.Sprintf("%d functions with high cyclomatic or cognitive complexity.", len(complexity)),
+		"Refactor complex functions — break them into smaller, focused units.",
+		complexity)
+
+	duplication := filterByCategory(findings, analyzer.CategoryDuplication)
+	steps = appendStep(steps, "Duplication",
+		fmt.Sprintf("%d duplicate code blocks detected.", len(duplication)),
+		"Extract duplicated logic into shared helpers or utilities.",
+		duplication)
+
+	security := filterByAnalyzer(findings, "security")
+	steps = appendStep(steps, "Security Review",
+		fmt.Sprintf("%d security-related findings.", len(security)),
+		"Review security findings carefully and apply recommended mitigations.",
+		security)
+
+	return steps
 }
 
 // filterBySeverity returns findings matching the given severity.
@@ -143,25 +131,6 @@ func filterByCategory(findings []analyzer.Finding, cat analyzer.Category) []anal
 		}
 	}
 	return result
-}
-
-// computeHealthScore replicates the reporter's health score computation.
-func computeHealthScore(findings []analyzer.Finding) int {
-	weights := map[analyzer.Severity]int{
-		analyzer.SeverityCritical: 25,
-		analyzer.SeverityWarning:  8,
-		analyzer.SeverityInfo:     2,
-		analyzer.SeverityHint:     1,
-	}
-	penalty := 0
-	for _, f := range findings {
-		penalty += weights[f.Severity]
-	}
-	score := 100 - penalty
-	if score < 0 {
-		score = 0
-	}
-	return score
 }
 
 // computeGrade converts a score to a letter grade.

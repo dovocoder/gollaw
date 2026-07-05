@@ -119,16 +119,39 @@ func BuildReport(
 	}
 }
 
+// SeverityWeights returns the per-severity penalty weights used for health scoring.
+func SeverityWeights() map[analyzer.Severity]int {
+	return map[analyzer.Severity]int{
+		analyzer.SeverityCritical: 25,
+		analyzer.SeverityWarning:  8,
+		analyzer.SeverityInfo:     2,
+		analyzer.SeverityHint:     1,
+	}
+}
+
+// ComputePenalty sums the severity weights for all findings.
+func ComputePenalty(findings []analyzer.Finding) int {
+	weights := SeverityWeights()
+	penalty := 0
+	for _, f := range findings {
+		penalty += weights[f.Severity]
+	}
+	return penalty
+}
+
+// ScoreFromPenalty converts a penalty total to a 0-100 health score.
+func ScoreFromPenalty(penalty int) int {
+	score := 100 - penalty
+	if score < 0 {
+		score = 0
+	}
+	return score
+}
+
 // computeHealthScore derives a 0-100 score from findings.
 // Weighted: critical findings hurt the most, hints barely matter.
 func computeHealthScore(findings []analyzer.Finding) HealthScore {
-	weights := map[analyzer.Severity]int{
-		analyzer.SeverityCritical: 25,
-		analyzer.SeverityWarning:   8,
-		analyzer.SeverityInfo:      2,
-		analyzer.SeverityHint:      1,
-	}
-
+	weights := SeverityWeights()
 	byCategory := make(map[string]int)
 	penalty := 0
 	for _, f := range findings {
@@ -137,10 +160,7 @@ func computeHealthScore(findings []analyzer.Finding) HealthScore {
 		byCategory[string(f.Category)] += w
 	}
 
-	score := 100 - penalty
-	if score < 0 {
-		score = 0
-	}
+	score := ScoreFromPenalty(penalty)
 
 	grade := "F"
 	switch {
@@ -182,14 +202,22 @@ type textReporter struct{}
 func (r *textReporter) Format() string { return "text" }
 
 func (r *textReporter) Write(w io.Writer, report *Report) error {
+	writeTextHeader(w, report)
+	writeTextFindings(w, report)
+	writeTextSummary(w, report)
+	return nil
+}
+
+func writeTextHeader(w io.Writer, report *Report) {
 	fmt.Fprintf(w, "Gollaw v%s — %s\n", report.Version, report.Timestamp)
 	fmt.Fprintf(w, "Patterns: %s\n", strings.Join(report.Patterns, ", "))
 	fmt.Fprintf(w, "Analyzers: %s\n", strings.Join(report.Analyzers, ", "))
 	fmt.Fprintf(w, "Stats: %d packages, %d files, %d functions, %d types\n",
 		report.Stats.Packages, report.Stats.Files, report.Stats.Functions, report.Stats.Types)
 	fmt.Fprintf(w, "\n")
+}
 
-	// Group findings by file.
+func writeTextFindings(w io.Writer, report *Report) {
 	byFile := make(map[string][]analyzer.Finding)
 	for _, f := range report.Findings {
 		byFile[f.File] = append(byFile[f.File], f)
@@ -217,7 +245,9 @@ func (r *textReporter) Write(w io.Writer, report *Report) error {
 		}
 		fmt.Fprintf(w, "\n")
 	}
+}
 
+func writeTextSummary(w io.Writer, report *Report) {
 	fmt.Fprintf(w, "─── Summary ───\n")
 	fmt.Fprintf(w, "Total findings: %d\n", report.Summary.Total)
 	for sev, count := range report.Summary.BySeverity {
@@ -226,18 +256,20 @@ func (r *textReporter) Write(w io.Writer, report *Report) error {
 	fmt.Fprintf(w, "\n")
 	fmt.Fprintf(w, "Health Score: %d/100 (grade: %s)\n", report.HealthScore.Score, report.HealthScore.Grade)
 	if len(report.HealthScore.ByCategory) > 0 {
-		fmt.Fprintf(w, "  by category:\n")
-		cats := make([]string, 0, len(report.HealthScore.ByCategory))
-		for c := range report.HealthScore.ByCategory {
-			cats = append(cats, c)
-		}
-		sort.Strings(cats)
-		for _, c := range cats {
-			fmt.Fprintf(w, "    %s: -%d\n", c, report.HealthScore.ByCategory[c])
-		}
+		writeHealthScoreCategories(w, report.HealthScore.ByCategory)
 	}
+}
 
-	return nil
+func writeHealthScoreCategories(w io.Writer, byCategory map[string]int) {
+	fmt.Fprintf(w, "  by category:\n")
+	cats := make([]string, 0, len(byCategory))
+	for c := range byCategory {
+		cats = append(cats, c)
+	}
+	sort.Strings(cats)
+	for _, c := range cats {
+		fmt.Fprintf(w, "    %s: -%d\n", c, byCategory[c])
+	}
 }
 
 func severityIcon(sev analyzer.Severity) string {
@@ -265,46 +297,57 @@ func shortPath(path string) string {
 
 // --- SARIF Reporter ---
 
+type sarifLocation struct {
+	PhysicalLocation struct {
+		ArtifactLocation struct {
+			URI string `json:"uri"`
+		} `json:"artifactLocation"`
+		Region struct {
+			StartLine int `json:"startLine"`
+		} `json:"region"`
+	} `json:"physicalLocation"`
+}
+
+type sarifResult struct {
+	RuleID  string `json:"ruleId"`
+	Level   string `json:"level"`
+	Message struct {
+		Text string `json:"text"`
+	} `json:"message"`
+	Locations []sarifLocation `json:"locations"`
+}
+
+type sarifRun struct {
+	Tool struct {
+		Driver struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"driver"`
+	} `json:"tool"`
+	Results []sarifResult `json:"results"`
+}
+
+type sarifReport struct {
+	Schema  string     `json:"$schema"`
+	Version string     `json:"version"`
+	Runs    []sarifRun `json:"runs"`
+}
+
 type sarifReporter struct{}
 
 func (r *sarifReporter) Format() string { return "sarif" }
 
 func (r *sarifReporter) Write(w io.Writer, report *Report) error {
-	type sarifLocation struct {
-		PhysicalLocation struct {
-			ArtifactLocation struct {
-				URI string `json:"uri"`
-			} `json:"artifactLocation"`
-			Region struct {
-				StartLine int `json:"startLine"`
-			} `json:"region"`
-		} `json:"physicalLocation"`
-	}
-	type sarifResult struct {
-		RuleID     string          `json:"ruleId"`
-		Level      string          `json:"level"`
-		Message    struct {
-			Text string `json:"text"`
-		} `json:"message"`
-		Locations []sarifLocation `json:"locations"`
-	}
-	type sarifRun struct {
-		Tool struct {
-			Driver struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-			} `json:"driver"`
-		} `json:"tool"`
-		Results []sarifResult `json:"results"`
-	}
-	type sarifReport struct {
-		Schema  string     `json:"$schema"`
-		Version string     `json:"version"`
-		Runs    []sarifRun `json:"runs"`
-	}
+	results := buildSarifResults(report.Findings)
+	sarif := buildSarifReport(report.Version, results)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(sarif)
+}
 
-	results := make([]sarifResult, len(report.Findings))
-	for i, f := range report.Findings {
+func buildSarifResults(findings []analyzer.Finding) []sarifResult {
+	results := make([]sarifResult, len(findings))
+	for i, f := range findings {
 		loc := sarifLocation{}
 		loc.PhysicalLocation.ArtifactLocation.URI = f.File
 		loc.PhysicalLocation.Region.StartLine = f.Line
@@ -315,19 +358,19 @@ func (r *sarifReporter) Write(w io.Writer, report *Report) error {
 		results[i].Message.Text = f.Message
 		results[i].Locations = []sarifLocation{loc}
 	}
+	return results
+}
 
+func buildSarifReport(version string, results []sarifResult) sarifReport {
 	sarif := sarifReport{
 		Schema:  "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cs01/schemas/sarif-schema-2.1.0.json",
 		Version: "2.1.0",
 	}
 	sarif.Runs = []sarifRun{{}}
 	sarif.Runs[0].Tool.Driver.Name = "gollaw"
-	sarif.Runs[0].Tool.Driver.Version = report.Version
+	sarif.Runs[0].Tool.Driver.Version = version
 	sarif.Runs[0].Results = results
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(sarif)
+	return sarif
 }
 
 func sarifLevel(sev analyzer.Severity) string {

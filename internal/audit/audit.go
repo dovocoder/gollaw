@@ -44,17 +44,40 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 		return nil, fmt.Errorf("get changed files: %w", err)
 	}
 
+	changedSet := buildChangedSet(changedFiles, dir)
+	auditFindings, summary := attributeFindings(allFindings, changedSet)
+	sort.Slice(auditFindings, func(i, j int) bool {
+		if auditFindings[i].Status != auditFindings[j].Status {
+			return auditFindings[i].Status == "introduced"
+		}
+		return severityRank(auditFindings[i].Severity) < severityRank(auditFindings[j].Severity)
+	})
+	verdict := determineVerdict(auditFindings)
+
+	return &auditReport{
+		BaseRef:      baseRef,
+		ChangedFiles: changedFiles,
+		Findings:     auditFindings,
+		Verdict:      verdict,
+		Summary:      summary,
+	}, nil
+}
+
+func buildChangedSet(changedFiles []string, dir string) map[string]bool {
 	changedSet := make(map[string]bool)
 	for _, f := range changedFiles {
 		abs, _ := filepath.Abs(filepath.Join(dir, f))
 		changedSet[abs] = true
 		changedSet[f] = true
 	}
+	return changedSet
+}
 
+func attributeFindings(findings []analyzer.Finding, changedSet map[string]bool) ([]auditFinding, auditSummary) {
 	var auditFindings []auditFinding
 	summary := auditSummary{BySeverity: make(map[string]int)}
 
-	for _, f := range allFindings {
+	for _, f := range findings {
 		isChanged := changedSet[f.File] || changedSet[filepath.Base(f.File)]
 		status := "pre-existing"
 		if isChanged {
@@ -72,36 +95,23 @@ func RunAudit(ctx *analyzer.Context, baseRef string, allFindings []analyzer.Find
 			FileChanged: isChanged,
 		})
 	}
+	return auditFindings, summary
+}
 
-	// Sort: introduced first, then by severity.
-	sort.Slice(auditFindings, func(i, j int) bool {
-		if auditFindings[i].Status != auditFindings[j].Status {
-			return auditFindings[i].Status == "introduced"
-		}
-		return severityRank(auditFindings[i].Severity) < severityRank(auditFindings[j].Severity)
-	})
-
+func determineVerdict(findings []auditFinding) string {
 	verdict := "pass"
-	for _, af := range auditFindings {
+	for _, af := range findings {
 		if af.Status != "introduced" {
 			continue
 		}
 		if af.Severity == analyzer.SeverityCritical {
-			verdict = "fail"
-			break
+			return "fail"
 		}
 		if af.Severity == analyzer.SeverityWarning && verdict != "fail" {
 			verdict = "warn"
 		}
 	}
-
-	return &auditReport{
-		BaseRef:      baseRef,
-		ChangedFiles: changedFiles,
-		Findings:     auditFindings,
-		Verdict:      verdict,
-		Summary:      summary,
-	}, nil
+	return verdict
 }
 
 func GetChangedFiles(baseRef, dir string) ([]string, error) {

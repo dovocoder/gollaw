@@ -25,78 +25,13 @@ func formatNextSteps(report *Report) ([]byte, error) {
 		categoryCounts[string(f.Category)]++
 	}
 
-	var steps []nextStep
-
-	// Dead code → suggest running fix.
-	if n := categoryCounts[string(analyzer.CategoryDeadCode)]; n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "gollaw fix --analyzer deadcode",
-			Priority:    "high",
-			Count:       n,
-			Description: fmt.Sprintf("Remove %d unreachable functions", n),
-		})
-	}
-
-	// Unused dependencies → go mod tidy.
-	if n := countByCategoryOrKeyword(categoryCounts, "dependencies", "unused-deps"); n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "go mod tidy",
-			Priority:    "medium",
-			Count:       n,
-			Description: fmt.Sprintf("Clean up %d unused dependency issues", n),
-		})
-	}
-
-	// Complexity → refactor.
-	if n := categoryCounts[string(analyzer.CategoryComplexity)]; n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "refactor",
-			Priority:    "high",
-			Count:       n,
-			Description: fmt.Sprintf("Refactor %d overly complex functions", n),
-		})
-	}
-
-	// Duplication → extract.
-	if n := categoryCounts[string(analyzer.CategoryDuplication)]; n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "extract",
-			Priority:    "medium",
-			Count:       n,
-			Description: fmt.Sprintf("Extract %d duplicated code blocks into shared helpers", n),
-		})
-	}
-
-	// Security findings → review (matched by keyword since no dedicated category).
-	if n := countSecurityFindings(report.Findings); n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "review",
-			Priority:    "critical",
-			Count:       n,
-			Description: fmt.Sprintf("Review and fix %d security-related findings", n),
-		})
-	}
-
-	// Naming findings → fix (matched by keyword since no dedicated category).
-	if n := countNamingFindings(report.Findings); n > 0 {
-		steps = append(steps, nextStep{
-			Action:      "gollaw fix --analyzer naming",
-			Priority:    "low",
-			Count:       n,
-			Description: fmt.Sprintf("Auto-fix %d naming convention violations", n),
-		})
-	}
-
-	// Sort by priority (critical > high > medium > low).
+	steps := buildNextSteps(report.Findings, categoryCounts)
 	sort.Slice(steps, func(i, j int) bool {
 		return priorityRank(steps[i].Priority) < priorityRank(steps[j].Priority)
 	})
-
-	// Max 5 steps.
 	if len(steps) > 5 {
 		steps = steps[:5]
 	}
-
 	if steps == nil {
 		steps = []nextStep{}
 	}
@@ -106,6 +41,58 @@ func formatNextSteps(report *Report) ([]byte, error) {
 		return nil, fmt.Errorf("marshal next steps: %w", err)
 	}
 	return out, nil
+}
+
+func buildNextSteps(findings []analyzer.Finding, counts map[string]int) []nextStep {
+	var steps []nextStep
+
+	steps = appendCategoryStep(steps, counts, string(analyzer.CategoryDeadCode), "high",
+		"gollaw fix --analyzer deadcode", "Remove %d unreachable functions")
+	steps = appendCategoryStep(steps, counts, string(analyzer.CategoryComplexity), "high",
+		"refactor", "Refactor %d overly complex functions")
+	steps = appendCategoryStep(steps, counts, string(analyzer.CategoryDuplication), "medium",
+		"extract", "Extract %d duplicated code blocks into shared helpers")
+
+	if n := countByCategoryOrKeyword(counts, "dependencies", "unused-deps"); n > 0 {
+		steps = append(steps, nextStep{
+			Action:      "go mod tidy",
+			Priority:    "medium",
+			Count:       n,
+			Description: fmt.Sprintf("Clean up %d unused dependency issues", n),
+		})
+	}
+
+	steps = appendKeywordStep(steps, findings, "security", "critical", "review",
+		"Review and fix %d security-related findings")
+	steps = appendKeywordStep(steps, findings, "naming", "low", "gollaw fix --analyzer naming",
+		"Auto-fix %d naming convention violations")
+
+	return steps
+}
+
+func appendCategoryStep(steps []nextStep, counts map[string]int, cat, priority, action, descFmt string) []nextStep {
+	if n := counts[cat]; n > 0 {
+		steps = append(steps, nextStep{
+			Action:      action,
+			Priority:    priority,
+			Count:       n,
+			Description: fmt.Sprintf(descFmt, n),
+		})
+	}
+	return steps
+}
+
+func appendKeywordStep(steps []nextStep, findings []analyzer.Finding, keyword, priority, action, descFmt string) []nextStep {
+	n := countKeywordFindings(findings, keyword)
+	if n > 0 {
+		steps = append(steps, nextStep{
+			Action:      action,
+			Priority:    priority,
+			Count:       n,
+			Description: fmt.Sprintf(descFmt, n),
+		})
+	}
+	return steps
 }
 
 func priorityRank(p string) int {
@@ -133,26 +120,13 @@ func countByCategoryOrKeyword(counts map[string]int, cat, keyword string) int {
 	return 0
 }
 
-func countSecurityFindings(findings []analyzer.Finding) int {
+func countKeywordFindings(findings []analyzer.Finding, keyword string) int {
 	count := 0
 	for _, f := range findings {
 		lc := strings.ToLower(string(f.Category))
 		msg := strings.ToLower(f.Message)
 		rule := strings.ToLower(f.RuleID)
-		if strings.Contains(lc, "security") || strings.Contains(msg, "security") || strings.Contains(rule, "security") {
-			count++
-		}
-	}
-	return count
-}
-
-func countNamingFindings(findings []analyzer.Finding) int {
-	count := 0
-	for _, f := range findings {
-		lc := strings.ToLower(string(f.Category))
-		msg := strings.ToLower(f.Message)
-		rule := strings.ToLower(f.RuleID)
-		if strings.Contains(lc, "naming") || strings.Contains(msg, "naming") || strings.Contains(rule, "naming") {
+		if strings.Contains(lc, keyword) || strings.Contains(msg, keyword) || strings.Contains(rule, keyword) {
 			count++
 		}
 	}

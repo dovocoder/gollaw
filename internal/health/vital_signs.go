@@ -66,7 +66,17 @@ func ComputeVitalSigns(
 	fileScores []filescore.FileHealthScore,
 	coveragePercent float64,
 ) *vitalSigns {
-	vs := &vitalSigns{
+	vs := initVitalSigns(stats)
+	weights := severityWeights()
+	penalty := processFindings(vs, findings, weights)
+	computeHealthScore(vs, penalty, stats.Functions)
+	vs.CoveragePercent = coveragePercent
+	return vs
+}
+
+// initVitalSigns creates the initial vitalSigns struct from codebase stats.
+func initVitalSigns(stats reporter.CodebaseStats) *vitalSigns {
+	return &vitalSigns{
 		TotalFiles:     stats.Files,
 		TotalPackages:  stats.Packages,
 		TotalFunctions: stats.Functions,
@@ -75,66 +85,82 @@ func ComputeVitalSigns(
 		ByCategory:     make(map[string]int),
 		Timestamp:      time.Now().UTC().Format(time.RFC3339),
 	}
+}
 
-	weights := map[analyzer.Severity]int{
+// severityWeights returns the penalty weight per severity level.
+func severityWeights() map[analyzer.Severity]int {
+	return map[analyzer.Severity]int{
 		analyzer.SeverityCritical: 25,
 		analyzer.SeverityWarning:  8,
 		analyzer.SeverityInfo:     2,
 		analyzer.SeverityHint:     1,
 	}
+}
 
+// processFindings iterates findings, updating counts and returning total penalty.
+func processFindings(vs *vitalSigns, findings []analyzer.Finding, weights map[analyzer.Severity]int) int {
 	penalty := 0
 	totalComplexity := 0
 	complexitySamples := 0
 
 	for _, f := range findings {
 		vs.TotalFindings++
-		switch f.Severity {
-		case analyzer.SeverityCritical:
-			vs.CriticalCount++
-		case analyzer.SeverityWarning:
-			vs.WarningCount++
-		case analyzer.SeverityInfo:
-			vs.InfoCount++
-		case analyzer.SeverityHint:
-			vs.HintCount++
-		}
+		updateSeverityCounts(vs, f.Severity)
 
 		w := weights[f.Severity]
 		penalty += w
 		vs.ByCategory[string(f.Category)] += w
 
-		switch f.Category {
-		case analyzer.CategoryDeadCode:
-			vs.DeadCodeCount++
-		case analyzer.CategoryDuplication:
-			vs.DuplicationCount++
-		case analyzer.CategoryUnused:
-			vs.UnusedCount++
-		case analyzer.CategoryComplexity:
-			// Try to extract complexity value from finding detail or message
-			c := extractComplexity(f)
-			if c > 0 {
-				totalComplexity += c
-				complexitySamples++
-				if c > vs.MaxComplexity {
-					vs.MaxComplexity = c
-				}
+		updateCategoryCounts(vs, f, &totalComplexity, &complexitySamples)
+	}
+
+	if complexitySamples > 0 {
+		vs.AvgComplexity = float64(totalComplexity) / float64(complexitySamples)
+	}
+	return penalty
+}
+
+// updateSeverityCounts increments the count for the given severity.
+func updateSeverityCounts(vs *vitalSigns, severity analyzer.Severity) {
+	switch severity {
+	case analyzer.SeverityCritical:
+		vs.CriticalCount++
+	case analyzer.SeverityWarning:
+		vs.WarningCount++
+	case analyzer.SeverityInfo:
+		vs.InfoCount++
+	case analyzer.SeverityHint:
+		vs.HintCount++
+	}
+}
+
+// updateCategoryCounts updates category-based counts and complexity tracking.
+func updateCategoryCounts(vs *vitalSigns, f analyzer.Finding, totalComplexity, complexitySamples *int) {
+	switch f.Category {
+	case analyzer.CategoryDeadCode:
+		vs.DeadCodeCount++
+	case analyzer.CategoryDuplication:
+		vs.DuplicationCount++
+	case analyzer.CategoryUnused:
+		vs.UnusedCount++
+	case analyzer.CategoryComplexity:
+		c := extractComplexity(f)
+		if c > 0 {
+			*totalComplexity += c
+			*complexitySamples++
+			if c > vs.MaxComplexity {
+				vs.MaxComplexity = c
 			}
 		}
 	}
+}
 
-	// Normalize penalty relative to codebase size and apply diminishing returns.
-	// A fixed penalty of 2 per info finding destroys the score for large codebases
-	// with many minor findings. Instead, we scale by function count and use a
-	// square-root curve so the marginal penalty decreases as findings accumulate.
-	functionCount := stats.Functions
+// computeHealthScore normalizes penalty and sets the health score and grade.
+func computeHealthScore(vs *vitalSigns, penalty, functionCount int) {
 	if functionCount == 0 {
 		functionCount = 1
 	}
-	// Scale factor: findings per 100 functions (so small codebases aren't over-penalized).
 	findingsPer100 := float64(penalty) * 100.0 / float64(functionCount)
-	// Diminishing returns: sqrt scaling.
 	scaledPenalty := int(math.Sqrt(findingsPer100) * 10)
 
 	score := 100 - scaledPenalty
@@ -143,20 +169,6 @@ func ComputeVitalSigns(
 	}
 	vs.HealthScore = score
 	vs.HealthGrade = gradeFor(score)
-
-	if complexitySamples > 0 {
-		vs.AvgComplexity = float64(totalComplexity) / float64(complexitySamples)
-	}
-
-	vs.CoveragePercent = coveragePercent
-
-	// Fan-in / Fan-out would come from dependency analysis; we approximate
-	// from file scores if available (not directly available, so leave as 0
-	// unless the caller provides additional data).
-	vs.FanInAvg = 0
-	vs.FanOutAvg = 0
-
-	return vs
 }
 
 // extractComplexity tries to parse a complexity number from a finding's detail
@@ -222,23 +234,58 @@ func FormatVitalSignsText(vs *vitalSigns) string {
 	var b strings.Builder
 
 	b.WriteString("─── Vital Signs ───\n\n")
+	formatCodebaseSection(&b, vs)
+	formatFindingsSection(&b, vs)
+	formatHealthSection(&b, vs)
+	formatComplexitySection(&b, vs)
+	formatCodeQualitySection(&b, vs)
+	formatCoverageSection(&b, vs)
+	formatDependenciesSection(&b, vs)
+	fmt.Fprintf(&b, "\nTimestamp: %s\n", vs.Timestamp)
 
-	b.WriteString("Codebase:\n")
-	fmt.Fprintf(&b, "  Files:     %d\n", vs.TotalFiles)
-	fmt.Fprintf(&b, "  Packages:  %d\n", vs.TotalPackages)
-	fmt.Fprintf(&b, "  Functions: %d\n", vs.TotalFunctions)
-	fmt.Fprintf(&b, "  Types:     %d\n", vs.TotalTypes)
-	fmt.Fprintf(&b, "  Decls:     %d\n", vs.TotalDecls)
+	return b.String()
+}
 
-	b.WriteString("\nFindings:\n")
-	fmt.Fprintf(&b, "  Total:     %d\n", vs.TotalFindings)
-	fmt.Fprintf(&b, "  Critical:  %d\n", vs.CriticalCount)
-	fmt.Fprintf(&b, "  Warning:   %d\n", vs.WarningCount)
-	fmt.Fprintf(&b, "  Info:      %d\n", vs.InfoCount)
-	fmt.Fprintf(&b, "  Hint:      %d\n", vs.HintCount)
+// metricEntry pairs a display label with an integer value for metric sections.
+type metricEntry struct {
+	label string
+	value int
+}
 
+// formatCodebaseSection writes the codebase counts section.
+func formatCodebaseSection(b *strings.Builder, vs *vitalSigns) {
+	writeMetricSection(b, "Codebase:\n", []metricEntry{
+		{"Files:", vs.TotalFiles},
+		{"Packages:", vs.TotalPackages},
+		{"Functions:", vs.TotalFunctions},
+		{"Types:", vs.TotalTypes},
+		{"Decls:", vs.TotalDecls},
+	})
+}
+
+// formatFindingsSection writes the findings counts section.
+func formatFindingsSection(b *strings.Builder, vs *vitalSigns) {
+	writeMetricSection(b, "\nFindings:\n", []metricEntry{
+		{"Total:", vs.TotalFindings},
+		{"Critical:", vs.CriticalCount},
+		{"Warning:", vs.WarningCount},
+		{"Info:", vs.InfoCount},
+		{"Hint:", vs.HintCount},
+	})
+}
+
+// writeMetricSection writes a header followed by labelled metric lines.
+func writeMetricSection(b *strings.Builder, header string, entries []metricEntry) {
+	b.WriteString(header)
+	for _, e := range entries {
+		fmt.Fprintf(b, "  %-11s%d\n", e.label, e.value)
+	}
+}
+
+// formatHealthSection writes the health score and penalty-by-category section.
+func formatHealthSection(b *strings.Builder, vs *vitalSigns) {
 	b.WriteString("\nHealth:\n")
-	fmt.Fprintf(&b, "  Score: %d/100 (grade: %s)\n", vs.HealthScore, vs.HealthGrade)
+	fmt.Fprintf(b, "  Score: %d/100 (grade: %s)\n", vs.HealthScore, vs.HealthGrade)
 
 	if len(vs.ByCategory) > 0 {
 		b.WriteString("  Penalty by category:\n")
@@ -248,31 +295,39 @@ func FormatVitalSignsText(vs *vitalSigns) string {
 		}
 		sort.Strings(cats)
 		for _, c := range cats {
-			fmt.Fprintf(&b, "    %s: -%d\n", c, vs.ByCategory[c])
+			fmt.Fprintf(b, "    %s: -%d\n", c, vs.ByCategory[c])
 		}
 	}
+}
 
+// formatComplexitySection writes the complexity metrics section.
+func formatComplexitySection(b *strings.Builder, vs *vitalSigns) {
 	b.WriteString("\nComplexity:\n")
-	fmt.Fprintf(&b, "  Average: %.1f\n", vs.AvgComplexity)
-	fmt.Fprintf(&b, "  Max:     %d\n", vs.MaxComplexity)
+	fmt.Fprintf(b, "  Average: %.1f\n", vs.AvgComplexity)
+	fmt.Fprintf(b, "  Max:     %d\n", vs.MaxComplexity)
+}
 
+// formatCodeQualitySection writes the code quality metrics section.
+func formatCodeQualitySection(b *strings.Builder, vs *vitalSigns) {
 	b.WriteString("\nCode Quality:\n")
-	fmt.Fprintf(&b, "  Duplication: %d\n", vs.DuplicationCount)
-	fmt.Fprintf(&b, "  Dead code:   %d\n", vs.DeadCodeCount)
-	fmt.Fprintf(&b, "  Unused:      %d\n", vs.UnusedCount)
+	fmt.Fprintf(b, "  Duplication: %d\n", vs.DuplicationCount)
+	fmt.Fprintf(b, "  Dead code:   %d\n", vs.DeadCodeCount)
+	fmt.Fprintf(b, "  Unused:      %d\n", vs.UnusedCount)
+}
 
+// formatCoverageSection writes the coverage section.
+func formatCoverageSection(b *strings.Builder, vs *vitalSigns) {
 	b.WriteString("\nCoverage:\n")
-	fmt.Fprintf(&b, "  %.1f%%\n", vs.CoveragePercent)
+	fmt.Fprintf(b, "  %.1f%%\n", vs.CoveragePercent)
+}
 
+// formatDependenciesSection writes the fan-in/fan-out section if applicable.
+func formatDependenciesSection(b *strings.Builder, vs *vitalSigns) {
 	if vs.FanInAvg > 0 || vs.FanOutAvg > 0 {
 		b.WriteString("\nDependencies:\n")
-		fmt.Fprintf(&b, "  Avg Fan-in:  %.1f\n", vs.FanInAvg)
-		fmt.Fprintf(&b, "  Avg Fan-out: %.1f\n", vs.FanOutAvg)
+		fmt.Fprintf(b, "  Avg Fan-in:  %.1f\n", vs.FanInAvg)
+		fmt.Fprintf(b, "  Avg Fan-out: %.1f\n", vs.FanOutAvg)
 	}
-
-	fmt.Fprintf(&b, "\nTimestamp: %s\n", vs.Timestamp)
-
-	return b.String()
 }
 
 // FormatVitalSignsJSON formats vital signs as indented JSON.

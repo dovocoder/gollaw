@@ -23,11 +23,19 @@ type coverageGap struct {
 
 // coverageReport summarises test coverage gaps across the codebase.
 type coverageReport struct {
-	TotalFunctions   int            `json:"totalFunctions"`
-	TestedFunctions  int            `json:"testedFunctions"`
-	UntestedFunctions int           `json:"untestedFunctions"`
-	CoveragePercent  float64        `json:"coveragePercent"`
-	Gaps             []coverageGap  `json:"gaps"`
+	TotalFunctions   int           `json:"totalFunctions"`
+	TestedFunctions  int           `json:"testedFunctions"`
+	UntestedFunctions int          `json:"untestedFunctions"`
+	CoveragePercent  float64       `json:"coveragePercent"`
+	Gaps             []coverageGap `json:"gaps"`
+}
+
+// fnInfo holds metadata about a non-test function found in the codebase.
+type fnInfo struct {
+	name    string
+	pkgPath string
+	file    string
+	line    int
 }
 
 // AnalyzeCoverage finds functions with no corresponding test coverage.
@@ -36,66 +44,77 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*coverageReport, error) {
 		return nil, fmt.Errorf("nil analyzer context")
 	}
 
-	// Collect all non-test functions from loaded packages.
-	type fnInfo struct {
-		name    string
-		pkgPath string
-		file    string
-		line    int
-	}
+	allFns, testFuncNames, calledFromTests := collectFunctions(ctx)
+	pkgHasTestFile := detectTestFiles(allFns)
+	return buildReport(allFns, testFuncNames, calledFromTests, pkgHasTestFile)
+}
 
+// collectFunctions gathers all non-test functions and test call information.
+func collectFunctions(ctx *analyzer.Context) ([]fnInfo, map[string]bool, map[string]bool) {
 	var allFns []fnInfo
-	testFuncNames := make(map[string]bool) // "pkgPath.TestName" → true
-	calledFromTests := make(map[string]bool) // "pkgPath.FuncName" → true
+	testFuncNames := make(map[string]bool)
+	calledFromTests := make(map[string]bool)
 
 	for _, pkg := range ctx.Packages {
 		if pkg.Types == nil || len(pkg.Syntax) == 0 {
 			continue
 		}
 		pkgPath := pkg.PkgPath
-
 		for _, file := range pkg.Syntax {
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok {
-					continue
-				}
-				// Skip methods' receiver-only? No — include methods too.
-				funcName := fn.Name.Name
-
-				// Is this a test function?
-				if isTestFuncName(funcName) {
-					testFuncNames[pkgPath+"."+funcName] = true
-
-					// Record which functions this test calls.
-					calledFns := collectCalledFuncs(file, fn)
-					for _, called := range calledFns {
-						calledFromTests[pkgPath+"."+called] = true
-					}
-				}
-
-				// Skip init, main (always "covered" conceptually).
-				if funcName == "init" || funcName == "main" {
-					continue
-				}
-
-				// Skip test helper functions.
-				if isTestFuncName(funcName) || strings.HasPrefix(funcName, "test") || strings.HasPrefix(funcName, "Test") {
-					continue
-				}
-
-				pos := ctx.FSET.Position(fn.Pos())
-				allFns = append(allFns, fnInfo{
-					name:    funcName,
-					pkgPath: pkgPath,
-					file:    pos.Filename,
-					line:    pos.Line,
-				})
-			}
+			processFileDecls(file, pkgPath, ctx, &allFns, testFuncNames, calledFromTests)
 		}
 	}
+	return allFns, testFuncNames, calledFromTests
+}
 
-	// Determine which packages have _test.go files on disk.
+// processFileDecls iterates declarations in a file, collecting functions and tests.
+func processFileDecls(
+	file *ast.File, pkgPath string, ctx *analyzer.Context,
+	allFns *[]fnInfo, testFuncNames, calledFromTests map[string]bool,
+) {
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		funcName := fn.Name.Name
+
+		if isTestFuncName(funcName) {
+			testFuncNames[pkgPath+"."+funcName] = true
+			recordTestCalls(file, fn, pkgPath, calledFromTests)
+		}
+		if shouldSkipFunc(funcName) {
+			continue
+		}
+
+		pos := ctx.FSET.Position(fn.Pos())
+		*allFns = append(*allFns, fnInfo{
+			name: funcName, pkgPath: pkgPath, file: pos.Filename, line: pos.Line,
+		})
+	}
+}
+
+// recordTestCalls records which functions a test function calls.
+func recordTestCalls(file *ast.File, fn *ast.FuncDecl, pkgPath string, calledFromTests map[string]bool) {
+	calledFns := collectCalledFuncs(file, fn)
+	for _, called := range calledFns {
+		calledFromTests[pkgPath+"."+called] = true
+	}
+}
+
+// shouldSkipFunc returns true for init, main, and test-related functions.
+func shouldSkipFunc(funcName string) bool {
+	if funcName == "init" || funcName == "main" {
+		return true
+	}
+	if isTestFuncName(funcName) {
+		return true
+	}
+	return strings.HasPrefix(funcName, "test") || strings.HasPrefix(funcName, "Test")
+}
+
+// detectTestFiles determines which packages have _test.go files on disk.
+func detectTestFiles(allFns []fnInfo) map[string]bool {
 	pkgHasTestFile := make(map[string]bool)
 	for _, fn := range allFns {
 		if pkgHasTestFile[fn.pkgPath] {
@@ -104,10 +123,15 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*coverageReport, error) {
 		dir := filepath.Dir(fn.file)
 		pkgHasTestFile[fn.pkgPath] = dirHasTestFiles(dir)
 	}
+	return pkgHasTestFile
+}
 
-	report := &coverageReport{
-		TotalFunctions: len(allFns),
-	}
+// buildReport constructs the coverage report from collected data.
+func buildReport(
+	allFns []fnInfo, testFuncNames, calledFromTests map[string]bool,
+	pkgHasTestFile map[string]bool,
+) (*coverageReport, error) {
+	report := &coverageReport{TotalFunctions: len(allFns)}
 
 	for _, fn := range allFns {
 		tested := isTested(fn.name, fn.pkgPath, testFuncNames, calledFromTests)
@@ -116,10 +140,10 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*coverageReport, error) {
 		} else {
 			report.UntestedFunctions++
 			report.Gaps = append(report.Gaps, coverageGap{
-				Function:   fn.name,
-				File:       fn.file,
-				Line:       fn.line,
-				Package:    fn.pkgPath,
+				Function:    fn.name,
+				File:        fn.file,
+				Line:        fn.line,
+				Package:     fn.pkgPath,
 				HasTestFile: pkgHasTestFile[fn.pkgPath],
 			})
 		}
@@ -128,14 +152,12 @@ func AnalyzeCoverage(ctx *analyzer.Context) (*coverageReport, error) {
 	if report.TotalFunctions > 0 {
 		report.CoveragePercent = float64(report.TestedFunctions) / float64(report.TotalFunctions) * 100
 	}
-
 	sort.Slice(report.Gaps, func(i, j int) bool {
 		if report.Gaps[i].Package != report.Gaps[j].Package {
 			return report.Gaps[i].Package < report.Gaps[j].Package
 		}
 		return report.Gaps[i].Line < report.Gaps[j].Line
 	})
-
 	return report, nil
 }
 

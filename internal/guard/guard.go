@@ -15,10 +15,10 @@ import (
 
 // guardReport is the result of checking a file against architecture rules.
 type guardReport struct {
-	FilePath        string            `json:"filePath"`
-	Exists          bool             `json:"exists"`
-	Zone            string           `json:"zone"`
-	ApplicableRules []guardRule      `json:"applicableRules"`
+	FilePath        string             `json:"filePath"`
+	Exists          bool               `json:"exists"`
+	Zone            string             `json:"zone"`
+	ApplicableRules []guardRule        `json:"applicableRules"`
 	Violations      []analyzer.Finding `json:"violations"`
 }
 
@@ -33,11 +33,8 @@ type guardRule struct {
 // rules apply to the file's package and whether the package currently
 // violates any of those rules.
 func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath string) (*guardReport, error) {
-	report := &guardReport{
-		FilePath: filePath,
-	}
+	report := &guardReport{FilePath: filePath}
 
-	// Check file existence.
 	if abs, err := filepath.Abs(filePath); err == nil {
 		filePath = abs
 	}
@@ -45,37 +42,46 @@ func BuildGuardReport(ctx *analyzer.Context, rules []analyzer.Rule, filePath str
 		report.Exists = true
 	}
 
-	// Determine which package this file belongs to.
 	pkgPath := findPkgForFile(ctx, filePath)
 	report.Zone = pkgPath
 
 	if pkgPath == "" {
-		// Could not find the package — still list all rules for awareness.
-		for _, rule := range rules {
-			report.ApplicableRules = append(report.ApplicableRules, guardRule{
-				Rule:        rule,
-				Severity:    string(analyzer.SeverityCritical),
-				Description: describeRule(rule),
-			})
-		}
+		report.ApplicableRules = rulesToGuardRules(rules)
 		return report, nil
 	}
 
-	// Find applicable rules: those mentioning this package as source or target.
+	report.ApplicableRules = applicableRulesForPkg(rules, pkgPath)
+	report.Violations = findViolations(ctx, rules, pkgPath)
+	return report, nil
+}
+
+// rulesToGuardRules converts all rules to guard rules (for awareness display).
+func rulesToGuardRules(rules []analyzer.Rule) []guardRule {
+	var result []guardRule
+	for _, rule := range rules {
+		result = append(result, makeGuardRule(rule))
+	}
+	return result
+}
+
+// applicableRulesForPkg returns guard rules that apply to the given package.
+func applicableRulesForPkg(rules []analyzer.Rule, pkgPath string) []guardRule {
+	var result []guardRule
 	for _, rule := range rules {
 		if ruleAppliesToPkg(rule, pkgPath) {
-			report.ApplicableRules = append(report.ApplicableRules, guardRule{
-				Rule:        rule,
-				Severity:    string(analyzer.SeverityCritical),
-				Description: describeRule(rule),
-			})
+			result = append(result, makeGuardRule(rule))
 		}
 	}
+	return result
+}
 
-	// Check for current violations: run the architecture analysis logic inline.
-	report.Violations = findViolations(ctx, rules, pkgPath)
-
-	return report, nil
+// makeGuardRule creates a guardRule from an analyzer.Rule.
+func makeGuardRule(rule analyzer.Rule) guardRule {
+	return guardRule{
+		Rule:        rule,
+		Severity:    string(analyzer.SeverityCritical),
+		Description: describeRule(rule),
+	}
 }
 
 // FormatGuardText produces a human-readable guard report.
@@ -84,45 +90,65 @@ func FormatGuardText(report *guardReport) string {
 
 	fmt.Fprintf(&b, "Guard Report for %s\n", report.FilePath)
 	fmt.Fprintf(&b, "────────────────────────────────────\n")
-	if report.Exists {
-		fmt.Fprintf(&b, "File exists: yes\n")
-	} else {
-		fmt.Fprintf(&b, "File exists: no (new file)\n")
-	}
-	if report.Zone != "" {
-		fmt.Fprintf(&b, "Package zone: %s\n", report.Zone)
-	} else {
-		fmt.Fprintf(&b, "Package zone: unknown (file not in any analyzed package)\n")
-	}
+	formatFileStatus(&b, report)
+	formatZone(&b, report)
 
 	fmt.Fprintf(&b, "\n")
-	if len(report.ApplicableRules) == 0 {
-		fmt.Fprintf(&b, "Applicable rules: none\n")
-	} else {
-		fmt.Fprintf(&b, "Applicable rules (%d):\n", len(report.ApplicableRules))
-		for i, gr := range report.ApplicableRules {
-			fmt.Fprintf(&b, "  %d. [%s] %s\n", i+1, gr.Severity, gr.Description)
-			fmt.Fprintf(&b, "     package %q must not import %q\n", gr.Rule.Package, gr.Rule.MustNotUse)
-		}
-	}
+	formatApplicableRules(&b, report.ApplicableRules)
 
 	fmt.Fprintf(&b, "\n")
-	if len(report.Violations) == 0 {
-		fmt.Fprintf(&b, "Current violations: none — you're clear to edit.\n")
-	} else {
-		fmt.Fprintf(&b, "Current violations (%d):\n", len(report.Violations))
-		for _, v := range report.Violations {
-			fmt.Fprintf(&b, "  [%s] %s:%d  %s\n", v.Severity, shortPath(v.File), v.Line, v.Message)
-			if v.Detail != "" {
-				fmt.Fprintf(&b, "    %s\n", v.Detail)
-			}
-			if v.Suggestion != "" {
-				fmt.Fprintf(&b, "    → %s\n", v.Suggestion)
-			}
-		}
-	}
+	formatViolationsText(&b, report.Violations)
 
 	return b.String()
+}
+
+// formatFileStatus writes the file existence status.
+func formatFileStatus(b *strings.Builder, report *guardReport) {
+	if report.Exists {
+		fmt.Fprintf(b, "File exists: yes\n")
+	} else {
+		fmt.Fprintf(b, "File exists: no (new file)\n")
+	}
+}
+
+// formatZone writes the package zone information.
+func formatZone(b *strings.Builder, report *guardReport) {
+	if report.Zone != "" {
+		fmt.Fprintf(b, "Package zone: %s\n", report.Zone)
+	} else {
+		fmt.Fprintf(b, "Package zone: unknown (file not in any analyzed package)\n")
+	}
+}
+
+// formatApplicableRules writes the applicable rules section.
+func formatApplicableRules(b *strings.Builder, rules []guardRule) {
+	if len(rules) == 0 {
+		fmt.Fprintf(b, "Applicable rules: none\n")
+		return
+	}
+	fmt.Fprintf(b, "Applicable rules (%d):\n", len(rules))
+	for i, gr := range rules {
+		fmt.Fprintf(b, "  %d. [%s] %s\n", i+1, gr.Severity, gr.Description)
+		fmt.Fprintf(b, "     package %q must not import %q\n", gr.Rule.Package, gr.Rule.MustNotUse)
+	}
+}
+
+// formatViolationsText writes the violations section.
+func formatViolationsText(b *strings.Builder, violations []analyzer.Finding) {
+	if len(violations) == 0 {
+		fmt.Fprintf(b, "Current violations: none — you're clear to edit.\n")
+		return
+	}
+	fmt.Fprintf(b, "Current violations (%d):\n", len(violations))
+	for _, v := range violations {
+		fmt.Fprintf(b, "  [%s] %s:%d  %s\n", v.Severity, shortPath(v.File), v.Line, v.Message)
+		if v.Detail != "" {
+			fmt.Fprintf(b, "    %s\n", v.Detail)
+		}
+		if v.Suggestion != "" {
+			fmt.Fprintf(b, "    → %s\n", v.Suggestion)
+		}
+	}
 }
 
 // FormatGuardJSON produces a JSON guard report.
@@ -179,66 +205,77 @@ func describeRule(rule analyzer.Rule) string {
 // findViolations runs the architecture boundary check for the given package
 // against the rules, returning findings for any current violations.
 func findViolations(ctx *analyzer.Context, rules []analyzer.Rule, pkgPath string) []analyzer.Finding {
-	var violations []analyzer.Finding
-
-	// Find the loaded package matching pkgPath.
-	type pkgInfo struct {
-		Path    string
-		Imports []string
-		Files   []string
-	}
-	var info *pkgInfo
-	for _, p := range ctx.Packages {
-		if p.PkgPath != pkgPath {
-			continue
-		}
-		pi := &pkgInfo{Path: p.PkgPath, Files: p.GoFiles}
-		for _, imp := range p.Imports {
-			if imp != nil {
-				pi.Imports = append(pi.Imports, imp.PkgPath)
-			}
-		}
-		info = pi
-		break
-	}
+	info := loadPkgImports(ctx, pkgPath)
 	if info == nil {
 		return nil
 	}
 
+	var violations []analyzer.Finding
 	for _, rule := range rules {
-		// Does this rule's source match the file's package?
 		if !pkgHasSuffix(pkgPath, rule.Package) {
-			// Also check if this package imports a forbidden target.
-			// Even if the rule's source is a different package, if *this*
-			// package imports the forbidden target it may be relevant context.
-			// But for violations, only flag if the source matches.
 			continue
 		}
-		for _, importedPath := range info.Imports {
-			if pkgHasSuffix(importedPath, rule.MustNotUse) {
-				file := ""
-				if len(info.Files) > 0 {
-					file = info.Files[0]
-				}
-				if file == "" {
-					file = importedPath
-				}
-				violations = append(violations, analyzer.Finding{
-					Analyzer:  "guard",
-					Category:  analyzer.CategoryArchitecture,
-					Severity:  analyzer.SeverityCritical,
-					Message:   fmt.Sprintf("architecture violation: %s imports %s", pkgPath, importedPath),
-					Detail:    fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
-					File:      file,
-					Line:      1,
-					RuleID:    "GLW-AR001",
-					Suggestion: fmt.Sprintf("Move the shared logic to a package that both %s and %s can import, or use an interface to invert the dependency.", rule.Package, rule.MustNotUse),
-				})
+		violations = append(violations, checkRuleViolations(rule, pkgPath, info)...)
+	}
+	return violations
+}
+
+// pkgImportInfo holds the imports and files of a loaded package.
+type pkgImportInfo struct {
+	Path    string
+	Imports []string
+	Files   []string
+}
+
+// loadPkgImports finds the loaded package matching pkgPath and extracts its imports.
+func loadPkgImports(ctx *analyzer.Context, pkgPath string) *pkgImportInfo {
+	for _, p := range ctx.Packages {
+		if p.PkgPath != pkgPath {
+			continue
+		}
+		info := &pkgImportInfo{Path: p.PkgPath, Files: p.GoFiles}
+		for _, imp := range p.Imports {
+			if imp != nil {
+				info.Imports = append(info.Imports, imp.PkgPath)
 			}
 		}
+		return info
 	}
+	return nil
+}
 
+// checkRuleViolations checks a single rule against the package's imports.
+func checkRuleViolations(rule analyzer.Rule, pkgPath string, info *pkgImportInfo) []analyzer.Finding {
+	var violations []analyzer.Finding
+	for _, importedPath := range info.Imports {
+		if !pkgHasSuffix(importedPath, rule.MustNotUse) {
+			continue
+		}
+		violations = append(violations, makeViolation(rule, pkgPath, importedPath, info))
+	}
 	return violations
+}
+
+// makeViolation creates a Finding for an architecture violation.
+func makeViolation(rule analyzer.Rule, pkgPath, importedPath string, info *pkgImportInfo) analyzer.Finding {
+	file := ""
+	if len(info.Files) > 0 {
+		file = info.Files[0]
+	}
+	if file == "" {
+		file = importedPath
+	}
+	return analyzer.Finding{
+		Analyzer:   "guard",
+		Category:   analyzer.CategoryArchitecture,
+		Severity:   analyzer.SeverityCritical,
+		Message:    fmt.Sprintf("architecture violation: %s imports %s", pkgPath, importedPath),
+		Detail:     fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
+		File:       file,
+		Line:       1,
+		RuleID:     "GLW-AR001",
+		Suggestion: fmt.Sprintf("Move the shared logic to a package that both %s and %s can import, or use an interface to invert the dependency.", rule.Package, rule.MustNotUse),
+	}
 }
 
 // pkgHasSuffix checks if a package path ends with the given segment at a path boundary.

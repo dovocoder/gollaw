@@ -42,24 +42,48 @@ func matchDoubleStar(pattern, path string) bool {
 		if part == "" {
 			continue
 		}
-		if i == 0 {
-			// First part must match the beginning
-			if !strings.HasPrefix(remaining, part) {
-				return false
-			}
-			remaining = strings.TrimPrefix(remaining, part)
-		} else if i == len(parts)-1 {
-			// Last part must match the end
-			if !strings.HasSuffix(remaining, part) {
-				return false
-			}
-		} else {
-			idx := strings.Index(remaining, part)
-			if idx < 0 {
-				return false
-			}
-			remaining = remaining[idx+len(part):]
+		ok, rest := matchDoubleStarPart(i, len(parts), part, remaining)
+		if !ok {
+			return false
 		}
+		remaining = rest
 	}
 	return true
+}
+
+// matchDoubleStarPart matches a single segment of a ** pattern.
+// Returns whether the part matched and the remaining unmatched path.
+func matchDoubleStarPart(index, total int, part, remaining string) (bool, string) {
+	if index == 0 {
+		return matchFirstPart(part, remaining)
+	}
+	if index == total-1 {
+		return matchLastPart(part, remaining)
+	}
+	return matchMiddlePart(part, remaining)
+}
+
+// matchFirstPart matches the first segment: must match the beginning.
+func matchFirstPart(part, remaining string) (bool, string) {
+	if !strings.HasPrefix(remaining, part) {
+		return false, ""
+	}
+	return true, strings.TrimPrefix(remaining, part)
+}
+
+// matchLastPart matches the last segment: must match the end.
+func matchLastPart(part, remaining string) (bool, string) {
+	if !strings.HasSuffix(remaining, part) {
+		return false, ""
+	}
+	return true, remaining
+}
+
+// matchMiddlePart matches a middle segment: must be found anywhere.
+func matchMiddlePart(part, remaining string) (bool, string) {
+	idx := strings.Index(remaining, part)
+	if idx < 0 {
+		return false, ""
+	}
+	return true, remaining[idx+len(part):]
 }

@@ -27,13 +27,21 @@ type regressionResult struct {
 // the outcome is "fail". If it exceeds but within tolerance, outcome is "warn".
 // Otherwise the outcome is "pass".
 func RunRegression(dir string, tolerance int) (*regressionResult, error) {
-	// Load baseline.
 	baselineFindings, err := baseline.Load(dir)
 	if err != nil {
 		return nil, fmt.Errorf("load baseline: %w", err)
 	}
 
-	// Run current analysis.
+	currentFindings, err := runCurrentAnalysis(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	regResult := buildRegressionResult(baselineFindings, currentFindings, tolerance)
+	return regResult, nil
+}
+
+func runCurrentAnalysis(dir string) ([]analyzer.Finding, error) {
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
 		return nil, fmt.Errorf("load codebase: %w", err)
@@ -57,30 +65,33 @@ func RunRegression(dir string, tolerance int) (*regressionResult, error) {
 		}
 		currentFindings = append(currentFindings, findings...)
 	}
+	return currentFindings, nil
+}
 
-	// Compute result.
+func buildRegressionResult(baselineFindings, currentFindings []analyzer.Finding, tolerance int) *regressionResult {
 	regResult := &regressionResult{
 		BaselineCount: len(baselineFindings),
 		CurrentCount:  len(currentFindings),
 		Tolerance:     tolerance,
 		ByCategory:    make(map[string]int),
 	}
-
 	regResult.Delta = regResult.CurrentCount - regResult.BaselineCount
+	regResult.Outcome, regResult.WithinTolerance = determineOutcome(regResult.Delta, tolerance)
+	fillCategoryDeltas(regResult, baselineFindings, currentFindings)
+	return regResult
+}
 
-	// Determine outcome.
-	if regResult.Delta > tolerance {
-		regResult.Outcome = "fail"
-		regResult.WithinTolerance = false
-	} else if regResult.Delta > 0 {
-		regResult.Outcome = "warn"
-		regResult.WithinTolerance = true
-	} else {
-		regResult.Outcome = "pass"
-		regResult.WithinTolerance = true
+func determineOutcome(delta, tolerance int) (outcome string, withinTolerance bool) {
+	if delta > tolerance {
+		return "fail", false
 	}
+	if delta > 0 {
+		return "warn", true
+	}
+	return "pass", true
+}
 
-	// Break down delta by category.
+func fillCategoryDeltas(regResult *regressionResult, baselineFindings, currentFindings []analyzer.Finding) {
 	baselineByCategory := countByCategory(baselineFindings)
 	currentByCategory := countByCategory(currentFindings)
 
@@ -97,8 +108,6 @@ func RunRegression(dir string, tolerance int) (*regressionResult, error) {
 			regResult.ByCategory[cat] = delta
 		}
 	}
-
-	return regResult, nil
 }
 
 // countByCategory groups findings by category and returns counts.

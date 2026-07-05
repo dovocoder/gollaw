@@ -22,26 +22,8 @@ func FormatPRComment(auditReport interface{}) string {
 	}
 
 	var b strings.Builder
-
-	// Header.
-	fmt.Fprintf(&b, "## 🗡️ Gollaw Analysis\n\n")
-	fmt.Fprintf(&b, "Health Score: **%d/100** (Grade: **%s**)\n\n", rep.HealthScore.Score, rep.HealthScore.Grade)
-
-	// Summary.
-	fmt.Fprintf(&b, "### Summary\n\n")
-	fmt.Fprintf(&b, "- **Total findings:** %d\n", rep.Summary.Total)
-	if rep.Summary.Total > 0 {
-		fmt.Fprintf(&b, "- **By severity:** ")
-		parts := make([]string, 0)
-		for _, sev := range []string{"critical", "warning", "info", "hint"} {
-			if count, ok := rep.Summary.BySeverity[sev]; ok && count > 0 {
-				parts = append(parts, fmt.Sprintf("%d %s", count, sev))
-			}
-		}
-		b.WriteString(strings.Join(parts, ", "))
-		b.WriteString("\n")
-	}
-	fmt.Fprintf(&b, "- **Codebase:** %d packages, %d files, %d functions\n\n", rep.Stats.Packages, rep.Stats.Files, rep.Stats.Functions)
+	writePRCommentHeader(&b, rep)
+	writePRCommentSummary(&b, rep)
 
 	if rep.Summary.Total == 0 {
 		fmt.Fprintf(&b, "### ✅ No issues found\n\n")
@@ -49,31 +31,59 @@ func FormatPRComment(auditReport interface{}) string {
 		return b.String()
 	}
 
-	// Findings table.
-	fmt.Fprintf(&b, "### Findings\n\n")
-	fmt.Fprintf(&b, "| Severity | File | Line | Rule | Message |\n")
-	fmt.Fprintf(&b, "|----------|------|------|------|---------|\n")
+	writePRCommentFindings(&b, rep)
+	writePRCommentScoreBreakdown(&b, rep)
+	return b.String()
+}
 
+func writePRCommentHeader(b *strings.Builder, rep *reporter.Report) {
+	fmt.Fprintf(b, "## 🗡️ Gollaw Analysis\n\n")
+	fmt.Fprintf(b, "Health Score: **%d/100** (Grade: **%s**)\n\n", rep.HealthScore.Score, rep.HealthScore.Grade)
+}
+
+func writePRCommentSummary(b *strings.Builder, rep *reporter.Report) {
+	fmt.Fprintf(b, "### Summary\n\n")
+	fmt.Fprintf(b, "- **Total findings:** %d\n", rep.Summary.Total)
+	if rep.Summary.Total > 0 {
+		writeSeverityBreakdown(b, rep)
+	}
+	fmt.Fprintf(b, "- **Codebase:** %d packages, %d files, %d functions\n\n", rep.Stats.Packages, rep.Stats.Files, rep.Stats.Functions)
+}
+
+func writeSeverityBreakdown(b *strings.Builder, rep *reporter.Report) {
+	fmt.Fprintf(b, "- **By severity:** ")
+	parts := make([]string, 0)
+	for _, sev := range []string{"critical", "warning", "info", "hint"} {
+		if count, ok := rep.Summary.BySeverity[sev]; ok && count > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", count, sev))
+		}
+	}
+	b.WriteString(strings.Join(parts, ", "))
+	b.WriteString("\n")
+}
+
+func writePRCommentFindings(b *strings.Builder, rep *reporter.Report) {
+	fmt.Fprintf(b, "### Findings\n\n")
+	fmt.Fprintf(b, "| Severity | File | Line | Rule | Message |\n")
+	fmt.Fprintf(b, "|----------|------|------|------|--------|\n")
 	for _, f := range rep.Findings {
 		file := shortPath(f.File)
 		sev := severityEmoji(f.Severity)
-		msg := f.Message
-		// Escape pipe characters in markdown table.
-		msg = strings.ReplaceAll(msg, "|", "\\|")
-		fmt.Fprintf(&b, "| %s | `%s` | %d | %s | %s |\n", sev, file, f.Line, f.RuleID, msg)
+		msg := strings.ReplaceAll(f.Message, "|", "\\|")
+		fmt.Fprintf(b, "| %s | `%s` | %d | %s | %s |\n", sev, file, f.Line, f.RuleID, msg)
 	}
+}
 
-	// Per-category breakdown.
-	if len(rep.HealthScore.ByCategory) > 0 {
-		fmt.Fprintf(&b, "\n### Score Breakdown\n\n")
-		fmt.Fprintf(&b, "| Category | Penalty |\n")
-		fmt.Fprintf(&b, "|----------|--------|\n")
-		for _, cat := range sortedKeys(rep.HealthScore.ByCategory) {
-			fmt.Fprintf(&b, "| %s | -%d |\n", cat, rep.HealthScore.ByCategory[cat])
-		}
+func writePRCommentScoreBreakdown(b *strings.Builder, rep *reporter.Report) {
+	if len(rep.HealthScore.ByCategory) == 0 {
+		return
 	}
-
-	return b.String()
+	fmt.Fprintf(b, "\n### Score Breakdown\n\n")
+	fmt.Fprintf(b, "| Category | Penalty |\n")
+	fmt.Fprintf(b, "|----------|--------|\n")
+	for _, cat := range sortedKeys(rep.HealthScore.ByCategory) {
+		fmt.Fprintf(b, "| %s | -%d |\n", cat, rep.HealthScore.ByCategory[cat])
+	}
 }
 
 func severityEmoji(sev analyzer.Severity) string {

@@ -31,46 +31,60 @@ type FileHealthScore struct {
 	FuncCount    int            `json:"funcCount"`
 }
 
-// ScoreFiles computes per-file health scores from findings.
-func ScoreFiles(findings []analyzer.Finding, stats fileStatsMap) []FileHealthScore {
-	weights := map[analyzer.Severity]int{
+// severityWeights returns the per-severity penalty weights.
+func severityWeights() map[analyzer.Severity]int {
+	return map[analyzer.Severity]int{
 		analyzer.SeverityCritical: 25,
 		analyzer.SeverityWarning:  8,
 		analyzer.SeverityInfo:     2,
 		analyzer.SeverityHint:     1,
 	}
+}
 
+// ScoreFiles computes per-file health scores from findings.
+func ScoreFiles(findings []analyzer.Finding, stats fileStatsMap) []FileHealthScore {
+	weights := severityWeights()
 	fileMap := make(map[string]*FileHealthScore)
 
 	for _, f := range findings {
-		score, ok := fileMap[f.File]
-		if !ok {
-			score = &FileHealthScore{
-				File:       f.File,
-				BySeverity: make(map[string]int),
-				ByCategory: make(map[string]int),
-			}
-			if stats != nil {
-				if s, ok := stats[f.File]; ok {
-					score.LineCount = s.LineCount
-					score.FuncCount = s.FuncCount
-				}
-			}
-			fileMap[f.File] = score
-		}
+		score := getOrCreateScore(fileMap, f.File, stats)
 		score.FindingCount++
 		score.BySeverity[string(f.Severity)]++
 		score.ByCategory[string(f.Category)] += weights[f.Severity]
 	}
 
+	scores := finalizeScores(fileMap, weights)
+	sort.Slice(scores, func(i, j int) bool {
+		return scores[i].Score < scores[j].Score
+	})
+	return scores
+}
+
+// getOrCreateScore returns the existing score for a file or creates a new one.
+func getOrCreateScore(fileMap map[string]*FileHealthScore, file string, stats fileStatsMap) *FileHealthScore {
+	if s, ok := fileMap[file]; ok {
+		return s
+	}
+	score := &FileHealthScore{
+		File:       file,
+		BySeverity: make(map[string]int),
+		ByCategory: make(map[string]int),
+	}
+	if stats != nil {
+		if s, ok := stats[file]; ok {
+			score.LineCount = s.LineCount
+			score.FuncCount = s.FuncCount
+		}
+	}
+	fileMap[file] = score
+	return score
+}
+
+// finalizeScores converts the score map to a slice, computing penalty and grade.
+func finalizeScores(fileMap map[string]*FileHealthScore, weights map[analyzer.Severity]int) []FileHealthScore {
 	var scores []FileHealthScore
 	for _, s := range fileMap {
 		penalty := 0
-		for _, w := range weights {
-			penalty += s.BySeverity[string(severityFromWeight(w, weights))] * w
-		}
-		// Recalculate penalty from byCategory
-		penalty = 0
 		for _, p := range s.ByCategory {
 			penalty += p
 		}
@@ -81,21 +95,7 @@ func ScoreFiles(findings []analyzer.Finding, stats fileStatsMap) []FileHealthSco
 		s.Grade = gradeFor(s.Score)
 		scores = append(scores, *s)
 	}
-
-	sort.Slice(scores, func(i, j int) bool {
-		return scores[i].Score < scores[j].Score
-	})
-
 	return scores
-}
-
-func severityFromWeight(w int, weights map[analyzer.Severity]int) analyzer.Severity {
-	for sev, weight := range weights {
-		if weight == w {
-			return sev
-		}
-	}
-	return analyzer.SeverityInfo
 }
 
 func gradeFor(score int) string {

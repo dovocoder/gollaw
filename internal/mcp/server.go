@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -858,7 +857,7 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 		return
 	}
 
-	changedFiles, err := getChangedFiles(baseRef, dir)
+	changedFiles, err := audit.GetChangedFiles(baseRef, dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
@@ -1028,8 +1027,9 @@ func (s *server) loadAndAnalyzeOrError(id json.RawMessage, dir string) (*analyze
 
 // parseArgs unmarshals JSON args into the given struct, tolerating empty args.
 // This eliminates the repeated "if len(args) > 0 { json.Unmarshal(args, &p) }" pattern.
+// Generic function — called via type parameters which the deadcode analyzer can't trace.
 //
-//gollaw:keep
+//gollaw:ignore deadcode
 func parseArgs[T any](args json.RawMessage) T {
 	var p T
 	if len(args) > 0 {
@@ -1192,27 +1192,3 @@ func countGoModDeps(dir string) int {
 	return count
 }
 
-// getChangedFiles returns the list of files changed relative to the given git base ref.
-func getChangedFiles(baseRef, dir string) ([]string, error) {
-	cmd := execGitCommand("diff", "--name-only", baseRef+"...HEAD", dir)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git diff: %w", err)
-	}
-
-	var files []string
-	for _, line := range strings.Split(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
-// execGitCommand creates a git command with the given args and working directory.
-func execGitCommand(args ...string) *exec.Cmd {
-	cmd := exec.Command("git", args[:len(args)-1]...)
-	cmd.Dir = args[len(args)-1]
-	return cmd
-}

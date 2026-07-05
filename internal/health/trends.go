@@ -12,10 +12,10 @@ import (
 
 // trendPoint is a single snapshot in time.
 type trendPoint struct {
-	Timestamp    string `json:"timestamp"`
-	Score        int    `json:"score"`
-	Grade        string `json:"grade"`
-	FindingsCount int   `json:"findingsCount"`
+	Timestamp     string `json:"timestamp"`
+	Score         int    `json:"score"`
+	Grade         string `json:"grade"`
+	FindingsCount int    `json:"findingsCount"`
 }
 
 // trendResult holds the trend data across multiple snapshots.
@@ -27,10 +27,10 @@ type trendResult struct {
 
 // snapshotData is the on-disk JSON representation.
 type snapshotData struct {
-	Timestamp    string `json:"timestamp"`
-	Score        int    `json:"score"`
-	Grade        string `json:"grade"`
-	FindingsCount int   `json:"findingsCount"`
+	Timestamp     string `json:"timestamp"`
+	Score         int    `json:"score"`
+	Grade         string `json:"grade"`
+	FindingsCount int    `json:"findingsCount"`
 }
 
 const (
@@ -47,9 +47,9 @@ func SaveSnapshot(dir string, vs *vitalSigns) error {
 	}
 
 	data := snapshotData{
-		Timestamp:    vs.Timestamp,
-		Score:        vs.HealthScore,
-		Grade:        vs.HealthGrade,
+		Timestamp:     vs.Timestamp,
+		Score:         vs.HealthScore,
+		Grade:         vs.HealthGrade,
 		FindingsCount: vs.TotalFindings,
 	}
 
@@ -64,7 +64,6 @@ func SaveSnapshot(dir string, vs *vitalSigns) error {
 		ts = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	// Parse the RFC3339 timestamp and reformat for the filename
 	fileName := formatSnapshotFileName(ts)
 	path := filepath.Join(snapDir, fileName)
 
@@ -98,40 +97,43 @@ func LoadTrends(dir string) (*trendResult, error) {
 		return nil, fmt.Errorf("read snapshots directory: %w", err)
 	}
 
+	points := readSnapshotPoints(snapDir, entries)
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Timestamp < points[j].Timestamp
+	})
+
+	return buildTrendResult(points), nil
+}
+
+// readSnapshotPoints reads and parses all JSON snapshot files in snapDir.
+func readSnapshotPoints(snapDir string, entries []os.DirEntry) []trendPoint {
 	var points []trendPoint
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-
 		path := filepath.Join(snapDir, entry.Name())
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			continue // skip unreadable files
 		}
-
 		var data snapshotData
 		if err := json.Unmarshal(raw, &data); err != nil {
 			continue // skip malformed files
 		}
-
 		points = append(points, trendPoint{
-			Timestamp:    data.Timestamp,
-			Score:        data.Score,
-			Grade:        data.Grade,
+			Timestamp:     data.Timestamp,
+			Score:         data.Score,
+			Grade:         data.Grade,
 			FindingsCount: data.FindingsCount,
 		})
 	}
+	return points
+}
 
-	// Sort by timestamp ascending
-	sort.Slice(points, func(i, j int) bool {
-		return points[i].Timestamp < points[j].Timestamp
-	})
-
-	result := &trendResult{
-		Points: points,
-	}
-
+// buildTrendResult computes direction and delta from sorted trend points.
+func buildTrendResult(points []trendPoint) *trendResult {
+	result := &trendResult{Points: points}
 	if len(points) >= 2 {
 		delta := points[len(points)-1].Score - points[0].Score
 		result.Delta = delta
@@ -146,8 +148,7 @@ func LoadTrends(dir string) (*trendResult, error) {
 	} else {
 		result.Direction = "stable"
 	}
-
-	return result, nil
+	return result
 }
 
 // FormatTrendsText formats the trend result as a text report with an ASCII sparkline chart.

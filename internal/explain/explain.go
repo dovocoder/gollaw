@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
+	"github.com/dovocoder/gollaw/internal/ssalookup"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/ssa"
@@ -35,7 +36,7 @@ type callNode struct {
 // ExplainUnused finds a symbol by name and explains why it is unused
 // (never referenced outside its own package or never called at all).
 func ExplainUnused(ctx *analyzer.Context, symbolName string) (*Explanation, error) {
-	fn := findFunction(ctx, symbolName)
+	fn := ssalookup.FindFunction(ctx, symbolName)
 	if fn != nil {
 		return explainUnusedFunction(ctx, fn, symbolName)
 	}
@@ -49,24 +50,24 @@ func ExplainUnused(ctx *analyzer.Context, symbolName string) (*Explanation, erro
 // ExplainDead finds a dead (unreachable) function by name and explains
 // what would need to call it for it to become reachable.
 func ExplainDead(ctx *analyzer.Context, symbolName string) (*Explanation, error) {
-	fn := findFunction(ctx, symbolName)
+	fn := ssalookup.FindFunction(ctx, symbolName)
 	if fn == nil {
 		return nil, fmt.Errorf("function %q not found in the analyzed codebase", symbolName)
 	}
 
-	loc := funcLocation(ctx, fn)
+	loc := ssalookup.FuncLocation(ctx, fn)
 	expl := &Explanation{Symbol: symbolName, Kind: funcKind(fn), Location: loc}
 
 	cg := static.CallGraph(ctx.SSA)
 	if isReachable(cg, fn) {
 		expl.Status = "used"
-		expl.Reason = fmt.Sprintf("function %s is reachable from an entry point", cleanFuncName(fn))
+		expl.Reason = fmt.Sprintf("function %s is reachable from an entry point", ssalookup.CleanFuncName(fn))
 		expl.CallChain = findCallChainFromEntry(ctx, cg, fn)
 		return expl, nil
 	}
 
 	expl.Status = "dead"
-	expl.Reason = fmt.Sprintf("function %s is not reachable from any entry point (main, init, exported, or method). No call chain reaches it.", cleanFuncName(fn))
+	expl.Reason = fmt.Sprintf("function %s is not reachable from any entry point (main, init, exported, or method). No call chain reaches it.", ssalookup.CleanFuncName(fn))
 	expl.CallChain = findPotentialCallers(ctx, cg, fn)
 	return expl, nil
 }
@@ -105,92 +106,6 @@ func writeCallChain(b *strings.Builder, e *Explanation) {
 
 // ─── Internal helpers ────────────────────────────────────────────────
 
-// findFunction searches all SSA packages for a function matching the given
-// name. Matches against fn.Name(), fn.String(), and "Type.Method" patterns.
-func findFunction(ctx *analyzer.Context, name string) *ssa.Function {
-	if ctx.SSA == nil {
-		return nil
-	}
-	for _, ssaPkg := range ctx.SSAByPkg {
-		if ssaPkg == nil {
-			continue
-		}
-		if fn := findFunctionInPackage(ssaPkg, name); fn != nil {
-			return fn
-		}
-	}
-	return nil
-}
-
-// findFunctionInPackage searches a single SSA package for a matching function.
-func findFunctionInPackage(ssaPkg *ssa.Package, name string) *ssa.Function {
-	for _, member := range ssaPkg.Members {
-		if fn, ok := member.(*ssa.Function); ok {
-			if matchFunctionName(fn, name) {
-				return fn
-			}
-		}
-		if typ, ok := member.(*ssa.Type); ok {
-			if fn := findMethodOnType(ssaPkg, typ, name); fn != nil {
-				return fn
-			}
-		}
-	}
-	return nil
-}
-
-// findMethodOnType searches for a method matching name on the given type
-// and its pointer type.
-func findMethodOnType(ssaPkg *ssa.Package, typ *ssa.Type, name string) *ssa.Function {
-	ms := ssaPkg.Prog.MethodSets.MethodSet(typ.Type())
-	for i := 0; i < ms.Len(); i++ {
-		fn := ssaPkg.Prog.MethodValue(ms.At(i))
-		if fn != nil && fn.Pkg == ssaPkg && matchFunctionName(fn, name) {
-			return fn
-		}
-	}
-	pointerType := types.NewPointer(typ.Type())
-	ms2 := ssaPkg.Prog.MethodSets.MethodSet(pointerType)
-	for i := 0; i < ms2.Len(); i++ {
-		fn := ssaPkg.Prog.MethodValue(ms2.At(i))
-		if fn != nil && fn.Pkg == ssaPkg && matchFunctionName(fn, name) {
-			return fn
-		}
-	}
-	return nil
-}
-
-// matchFunctionName checks if an SSA function matches the requested symbol name.
-func matchFunctionName(fn *ssa.Function, name string) bool {
-	if fn.Name() == name || fn.String() == name {
-		return true
-	}
-	recv := fn.Signature.Recv()
-	typeName := ""
-	if recv != nil {
-		typeName = recvTypeName(recv.Type())
-		if typeName != "" && typeName+"."+fn.Name() == name {
-			return true
-		}
-	}
-	if cleanFuncName(fn) == name {
-		return true
-	}
-	return matchLastComponent(fn, name, recv, typeName)
-}
-
-// matchLastComponent checks if the last component of a dotted name matches.
-func matchLastComponent(fn *ssa.Function, name string, recv *types.Var, typeName string) bool {
-	parts := strings.Split(name, ".")
-	if len(parts) == 0 || fn.Name() != parts[len(parts)-1] {
-		return false
-	}
-	if len(parts) >= 2 && recv != nil {
-		return typeName == parts[len(parts)-2]
-	}
-	return len(parts) < 2 || recv == nil
-}
-
 // findTypeObject searches for a non-function exported symbol (type, var, const).
 func findTypeObject(ctx *analyzer.Context, name string) types.Object {
 	for _, typPkg := range ctx.TypesByPkg {
@@ -210,7 +125,7 @@ func findTypeObject(ctx *analyzer.Context, name string) types.Object {
 
 // explainUnusedFunction creates an explanation for an unused function.
 func explainUnusedFunction(ctx *analyzer.Context, fn *ssa.Function, symbolName string) (*Explanation, error) {
-	loc := funcLocation(ctx, fn)
+	loc := ssalookup.FuncLocation(ctx, fn)
 	expl := &Explanation{Symbol: symbolName, Kind: funcKind(fn), Location: loc}
 
 	cg := static.CallGraph(ctx.SSA)
@@ -218,7 +133,7 @@ func explainUnusedFunction(ctx *analyzer.Context, fn *ssa.Function, symbolName s
 		setReachableStatus(expl, ctx, cg, fn)
 	} else {
 		expl.Status = "dead"
-		expl.Reason = fmt.Sprintf("function %s is not reachable from any entry point", cleanFuncName(fn))
+		expl.Reason = fmt.Sprintf("function %s is not reachable from any entry point", ssalookup.CleanFuncName(fn))
 		expl.CallChain = findPotentialCallers(ctx, cg, fn)
 	}
 	return expl, nil
@@ -229,10 +144,10 @@ func setReachableStatus(expl *Explanation, ctx *analyzer.Context, cg *callgraph.
 	externalCallers := findExternalCallers(ctx, cg, fn)
 	if len(externalCallers) == 0 {
 		expl.Status = "unused"
-		expl.Reason = fmt.Sprintf("function %s is reachable but only within its own package; not called externally", cleanFuncName(fn))
+		expl.Reason = fmt.Sprintf("function %s is reachable but only within its own package; not called externally", ssalookup.CleanFuncName(fn))
 	} else {
 		expl.Status = "used"
-		expl.Reason = fmt.Sprintf("function %s is reachable and called externally", cleanFuncName(fn))
+		expl.Reason = fmt.Sprintf("function %s is reachable and called externally", ssalookup.CleanFuncName(fn))
 	}
 	expl.CallChain = findCallChainFromEntry(ctx, cg, fn)
 }
@@ -440,12 +355,12 @@ func findExternalCallers(ctx *analyzer.Context, cg *callgraph.Graph, target *ssa
 	}
 
 	var external []callNode
-	targetPkg := funcPackage(target)
+	targetPkg := ssalookup.FuncPackage(target)
 	for _, edge := range targetNode.In {
 		if edge.Caller == nil || edge.Caller.Func == nil {
 			continue
 		}
-		callerPkg := funcPackage(edge.Caller.Func)
+		callerPkg := ssalookup.FuncPackage(edge.Caller.Func)
 		if callerPkg != targetPkg {
 			external = append(external, ssaToCallNode(ctx, edge.Caller.Func))
 		}
@@ -455,18 +370,11 @@ func findExternalCallers(ctx *analyzer.Context, cg *callgraph.Graph, target *ssa
 
 // ssaToCallNode converts an SSA function to a callNode.
 func ssaToCallNode(ctx *analyzer.Context, fn *ssa.Function) callNode {
-	pos := ctx.FSET.Position(fn.Pos())
 	return callNode{
-		Function: cleanFuncName(fn),
-		Location: fmt.Sprintf("%s:%d", pos.Filename, pos.Line),
-		Package:  funcPackage(fn),
+		Function: ssalookup.CleanFuncName(fn),
+		Location: ssalookup.FuncLocation(ctx, fn),
+		Package:  ssalookup.FuncPackage(fn),
 	}
-}
-
-// funcLocation returns "file:line" for an SSA function.
-func funcLocation(ctx *analyzer.Context, fn *ssa.Function) string {
-	pos := ctx.FSET.Position(fn.Pos())
-	return fmt.Sprintf("%s:%d", pos.Filename, pos.Line)
 }
 
 // funcKind returns the kind label for a function.
@@ -475,43 +383,6 @@ func funcKind(fn *ssa.Function) string {
 		return "method"
 	}
 	return "function"
-}
-
-// funcPackage returns the package path for a function.
-func funcPackage(fn *ssa.Function) string {
-	if fn.Pkg != nil && fn.Pkg.Pkg != nil {
-		return fn.Pkg.Pkg.Path()
-	}
-	if fn.Object() != nil && fn.Object().Pkg() != nil {
-		return fn.Object().Pkg().Path()
-	}
-	return ""
-}
-
-// cleanFuncName returns a readable "pkg.funcName" or "pkg.Type.Method" form.
-func cleanFuncName(fn *ssa.Function) string {
-	if fn.Object() != nil && fn.Object().Pkg() != nil {
-		return fmt.Sprintf("%s.%s", fn.Object().Pkg().Name(), fn.Name())
-	}
-	if fn.Pkg != nil {
-		return fmt.Sprintf("%s.%s", fn.Pkg.Pkg.Name(), fn.Name())
-	}
-	return fn.String()
-}
-
-// recvTypeName extracts the receiver type name.
-func recvTypeName(t interface{}) string {
-	if n, ok := t.(interface {
-		Obj() interface{ Name() string }
-	}); ok {
-		return n.Obj().Name()
-	}
-	if p, ok := t.(interface {
-		Elem() interface{}
-	}); ok {
-		return recvTypeName(p.Elem())
-	}
-	return ""
 }
 
 // kindOf returns the kind string for a types.Object.

@@ -4,10 +4,10 @@ package trace
 
 import (
 	"fmt"
-	"go/types"
 	"strings"
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
+	"github.com/dovocoder/gollaw/internal/ssalookup"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/ssa"
@@ -33,7 +33,6 @@ type traceNode struct {
 
 // traceState holds shared state for a DFS trace.
 type traceState struct {
-	ctx      *analyzer.Context
 	maxDepth int
 	visited  map[string]bool
 	path     []traceNode
@@ -50,7 +49,7 @@ func TraceCallers(ctx *analyzer.Context, symbolName string, maxDepth int) (*Trac
 	cg := static.CallGraph(ctx.SSA)
 	reverseEdges := buildReverseEdges(cg)
 
-	state := &traceState{ctx: ctx, maxDepth: maxDepth, visited: make(map[string]bool)}
+	state := &traceState{maxDepth: maxDepth, visited: make(map[string]bool)}
 	var chains [][]traceNode
 
 	dfs := func(current *ssa.Function, depth int) {}
@@ -91,7 +90,7 @@ func TraceCallees(ctx *analyzer.Context, symbolName string, maxDepth int) (*Trac
 	}
 
 	cg := static.CallGraph(ctx.SSA)
-	state := &traceState{ctx: ctx, maxDepth: maxDepth, visited: make(map[string]bool)}
+	state := &traceState{maxDepth: maxDepth, visited: make(map[string]bool)}
 	var chains [][]traceNode
 
 	dfs := func(current *ssa.Function, depth int) {}
@@ -133,7 +132,7 @@ func resolveFunction(ctx *analyzer.Context, symbolName string, maxDepth int, max
 	if maxDepth <= 0 {
 		*maxDepthPtr = defaultMaxDepth
 	}
-	fn := findFunction(ctx, symbolName)
+	fn := ssalookup.FindFunction(ctx, symbolName)
 	if fn == nil {
 		return nil, fmt.Errorf("function %q not found in the analyzed codebase", symbolName)
 	}
@@ -175,9 +174,9 @@ func getCallees(cg *callgraph.Graph, fn *ssa.Function) []*ssa.Function {
 // makeTraceNode creates a traceNode from an SSA function.
 func makeTraceNode(ctx *analyzer.Context, fn *ssa.Function, depth int) traceNode {
 	return traceNode{
-		Function: cleanFuncName(fn),
-		Location: funcLocation(ctx, fn),
-		Package:  funcPackage(fn),
+		Function: ssalookup.CleanFuncName(fn),
+		Location: ssalookup.FuncLocation(ctx, fn),
+		Package:  ssalookup.FuncPackage(fn),
 		Depth:    depth,
 	}
 }
@@ -243,132 +242,4 @@ func writeChainNodes(b *strings.Builder, chain []traceNode) {
 		}
 		fmt.Fprintf(b, "%s%s %s  (%s)  [%s]\n", indent, arrow, node.Function, node.Location, node.Package)
 	}
-}
-
-// ─── Internal helpers ────────────────────────────────────────────────
-
-// findFunction searches all SSA packages for a function matching the given
-// name. Matches against fn.Name(), fn.String(), "Type.Method", and "pkg.func".
-func findFunction(ctx *analyzer.Context, name string) *ssa.Function {
-	for _, ssaPkg := range ctx.SSAByPkg {
-		if ssaPkg == nil {
-			continue
-		}
-		if fn := findFunctionInPackage(ssaPkg, name); fn != nil {
-			return fn
-		}
-	}
-	return nil
-}
-
-// findFunctionInPackage searches a single SSA package for a matching function.
-func findFunctionInPackage(ssaPkg *ssa.Package, name string) *ssa.Function {
-	for _, member := range ssaPkg.Members {
-		if fn, ok := member.(*ssa.Function); ok {
-			if matchFunctionName(fn, name) {
-				return fn
-			}
-		}
-		if typ, ok := member.(*ssa.Type); ok {
-			if fn := findMethodOnType(ssaPkg, typ, name); fn != nil {
-				return fn
-			}
-		}
-	}
-	return nil
-}
-
-// findMethodOnType searches for a method matching name on the given type
-// and its pointer type.
-func findMethodOnType(ssaPkg *ssa.Package, typ *ssa.Type, name string) *ssa.Function {
-	ms := ssaPkg.Prog.MethodSets.MethodSet(typ.Type())
-	for i := 0; i < ms.Len(); i++ {
-		fn := ssaPkg.Prog.MethodValue(ms.At(i))
-		if fn != nil && fn.Pkg == ssaPkg && matchFunctionName(fn, name) {
-			return fn
-		}
-	}
-	pointerType := types.NewPointer(typ.Type())
-	ms2 := ssaPkg.Prog.MethodSets.MethodSet(pointerType)
-	for i := 0; i < ms2.Len(); i++ {
-		fn := ssaPkg.Prog.MethodValue(ms2.At(i))
-		if fn != nil && fn.Pkg == ssaPkg && matchFunctionName(fn, name) {
-			return fn
-		}
-	}
-	return nil
-}
-
-// matchFunctionName checks if an SSA function matches the requested symbol name.
-func matchFunctionName(fn *ssa.Function, name string) bool {
-	if fn.Name() == name || fn.String() == name {
-		return true
-	}
-	recv := fn.Signature.Recv()
-	typeName := ""
-	if recv != nil {
-		typeName = recvTypeName(recv.Type())
-		if typeName != "" && typeName+"."+fn.Name() == name {
-			return true
-		}
-	}
-	if cleanFuncName(fn) == name {
-		return true
-	}
-	return matchLastComponent(fn, name, recv, typeName)
-}
-
-// matchLastComponent checks if the last component of a dotted name matches.
-func matchLastComponent(fn *ssa.Function, name string, recv *types.Var, typeName string) bool {
-	parts := strings.Split(name, ".")
-	if len(parts) == 0 || fn.Name() != parts[len(parts)-1] {
-		return false
-	}
-	if len(parts) >= 2 && recv != nil && typeName == parts[len(parts)-2] {
-		return true
-	}
-	return len(parts) < 2 || recv == nil
-}
-
-// funcLocation returns "file:line" for an SSA function.
-func funcLocation(ctx *analyzer.Context, fn *ssa.Function) string {
-	pos := ctx.FSET.Position(fn.Pos())
-	return fmt.Sprintf("%s:%d", pos.Filename, pos.Line)
-}
-
-// funcPackage returns the package path for a function.
-func funcPackage(fn *ssa.Function) string {
-	if fn.Pkg != nil && fn.Pkg.Pkg != nil {
-		return fn.Pkg.Pkg.Path()
-	}
-	if fn.Object() != nil && fn.Object().Pkg() != nil {
-		return fn.Object().Pkg().Path()
-	}
-	return ""
-}
-
-// cleanFuncName returns a readable "pkg.funcName" form.
-func cleanFuncName(fn *ssa.Function) string {
-	if fn.Object() != nil && fn.Object().Pkg() != nil {
-		return fmt.Sprintf("%s.%s", fn.Object().Pkg().Name(), fn.Name())
-	}
-	if fn.Pkg != nil {
-		return fmt.Sprintf("%s.%s", fn.Pkg.Pkg.Name(), fn.Name())
-	}
-	return fn.String()
-}
-
-// recvTypeName extracts the receiver type name.
-func recvTypeName(t interface{}) string {
-	if n, ok := t.(interface {
-		Obj() interface{ Name() string }
-	}); ok {
-		return n.Obj().Name()
-	}
-	if p, ok := t.(interface {
-		Elem() interface{}
-	}); ok {
-		return recvTypeName(p.Elem())
-	}
-	return ""
 }

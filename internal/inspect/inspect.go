@@ -11,6 +11,7 @@ import (
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
 	"github.com/dovocoder/gollaw/internal/codeowners"
+	"github.com/dovocoder/gollaw/internal/reporter"
 	"github.com/dovocoder/gollaw/internal/trace"
 )
 
@@ -214,22 +215,7 @@ func collectSymbolFindings(ctx *analyzer.Context, symbol string) []analyzer.Find
 
 // computeFileHealth computes a simple health score and grade from findings.
 func computeFileHealth(findings []analyzer.Finding) (int, string) {
-	weights := map[analyzer.Severity]int{
-		analyzer.SeverityCritical: 25,
-		analyzer.SeverityWarning:  8,
-		analyzer.SeverityInfo:     2,
-		analyzer.SeverityHint:     1,
-	}
-
-	penalty := 0
-	for _, f := range findings {
-		penalty += weights[f.Severity]
-	}
-
-	score := 100 - penalty
-	if score < 0 {
-		score = 0
-	}
+	score := reporter.ScoreFromPenalty(reporter.ComputePenalty(findings))
 	return score, healthGrade(score)
 }
 

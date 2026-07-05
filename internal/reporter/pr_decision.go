@@ -28,52 +28,9 @@ const healthThreshold = 70
 
 // formatPRDecision renders a structured PR decision with pass/fail gates.
 func formatPRDecision(report *Report) ([]byte, error) {
-	counts := map[string]int{
-		"critical": 0,
-		"warning":  0,
-		"info":     0,
-		"hint":     0,
-		"total":    len(report.Findings),
-	}
-	for _, f := range report.Findings {
-		counts[string(f.Severity)]++
-	}
-
-	var gates []prGate
-
-	// Gate: no-critical — fail if any critical findings.
-	critCount := counts["critical"]
-	gates = append(gates, prGate{
-		Name:   "no-critical",
-		Passed: critCount == 0,
-		Count:  critCount,
-	})
-
-	// Gate: no-new-warnings — placeholder for diff mode (always passes in full-scan mode).
-	gates = append(gates, prGate{
-		Name:   "no-new-warnings",
-		Passed: true,
-		Count:  0,
-	})
-
-	// Gate: health-above-threshold — pass if score >= threshold.
-	gates = append(gates, prGate{
-		Name:   "health-above-threshold",
-		Passed: report.HealthScore.Score >= healthThreshold,
-		Count:  healthThreshold,
-	})
-
-	// Determine overall conclusion.
-	conclusion := "success"
-	for _, g := range gates {
-		if !g.Passed {
-			conclusion = "failure"
-			break
-		}
-	}
-	if conclusion == "success" && counts["warning"] > 0 {
-		conclusion = "neutral"
-	}
+	counts := buildSeverityCounts(report.Findings)
+	gates := buildPRGates(report, counts)
+	conclusion := determineConclusion(gates, counts["warning"])
 
 	decision := prDecision{
 		Schema:      "gollaw-pr-decision/v1",
@@ -88,6 +45,54 @@ func formatPRDecision(report *Report) ([]byte, error) {
 		return nil, fmt.Errorf("marshal pr-decision: %w", err)
 	}
 	return out, nil
+}
+
+func buildSeverityCounts(findings []analyzer.Finding) map[string]int {
+	counts := map[string]int{
+		"critical": 0,
+		"warning":  0,
+		"info":     0,
+		"hint":     0,
+		"total":    len(findings),
+	}
+	for _, f := range findings {
+		counts[string(f.Severity)]++
+	}
+	return counts
+}
+
+func buildPRGates(report *Report, counts map[string]int) []prGate {
+	var gates []prGate
+	critCount := counts["critical"]
+	gates = append(gates, prGate{
+		Name:   "no-critical",
+		Passed: critCount == 0,
+		Count:  critCount,
+	})
+	gates = append(gates, prGate{
+		Name:   "no-new-warnings",
+		Passed: true,
+		Count:  0,
+	})
+	gates = append(gates, prGate{
+		Name:   "health-above-threshold",
+		Passed: report.HealthScore.Score >= healthThreshold,
+		Count:  healthThreshold,
+	})
+	return gates
+}
+
+func determineConclusion(gates []prGate, warningCount int) string {
+	conclusion := "success"
+	for _, g := range gates {
+		if !g.Passed {
+			return "failure"
+		}
+	}
+	if warningCount > 0 {
+		conclusion = "neutral"
+	}
+	return conclusion
 }
 
 // severityPriorityValue returns a numeric priority for sorting (lower = higher priority).

@@ -1,5 +1,6 @@
-//gollaw:ignore dependencies
 // Package cli implements the command-line interface for Gollaw.
+//
+//gollaw:ignore dependencies
 package cli
 
 import (
@@ -11,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/dovocoder/gollaw/internal/action"
-	"github.com/dovocoder/gollaw/internal/audit"
 	"github.com/dovocoder/gollaw/internal/analyzer"
+	"github.com/dovocoder/gollaw/internal/audit"
 	"github.com/dovocoder/gollaw/internal/baseline"
 	"github.com/dovocoder/gollaw/internal/codeowners"
 	"github.com/dovocoder/gollaw/internal/config"
@@ -24,8 +25,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/guard"
 	"github.com/dovocoder/gollaw/internal/health"
 	"github.com/dovocoder/gollaw/internal/inspect"
-	"github.com/dovocoder/gollaw/internal/lsp"
 	"github.com/dovocoder/gollaw/internal/loader"
+	"github.com/dovocoder/gollaw/internal/lsp"
 	"github.com/dovocoder/gollaw/internal/mcp"
 	"github.com/dovocoder/gollaw/internal/migrate"
 	"github.com/dovocoder/gollaw/internal/publicapi"
@@ -40,6 +41,7 @@ import (
 )
 
 // Version is set at build time via -ldflags "-X github.com/dovocoder/gollaw/internal/cli.Version=v0.2.0".
+//
 //gollaw:ignore api-surface
 var Version = "0.2.0-dev"
 
@@ -159,8 +161,8 @@ func tryUtilityCommand(cmd string, rest []string) (int, bool) {
 type analyzeOpts struct {
 	patterns     []string
 	format       string
-	analyzerList  string
-	rules         []string
+	analyzerList string
+	rules        []string
 	minSeverity  string
 	maxCyc       int
 	maxCog       int
@@ -333,6 +335,14 @@ func parseFlagEquals(arg, prefix string) (string, bool) {
 	return "", false
 }
 
+// assignNextString advances i and assigns the following arg to dst if present.
+func assignNextString(args []string, i *int, dst *string) {
+	*i++
+	if *i < len(args) {
+		*dst = args[*i]
+	}
+}
+
 func buildAnalyzerConfig(o analyzeOpts) (analyzer.Config, int) {
 	var analyzerNames []string
 	if o.analyzerList != "" {
@@ -462,7 +472,6 @@ func parseAllSuppressions(ctx *analyzer.Context) *suppress.Suppressions {
 	return sup
 }
 
-
 // ─── shared command helpers ───
 
 // formatDirOpts holds parsed --format and --dir flags.
@@ -510,6 +519,16 @@ func loadResult(dir string) (*analyzer.Context, *loader.Result, int) {
 		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
 	}
 	return ctx, result, 0
+}
+
+// loadAndScore loads the codebase (via loadSimple) and computes per-file scores.
+func loadAndScore(dir string) (*reporter.Report, []filescore.FileHealthScore, int) {
+	rep, _, code := loadSimple(dir)
+	if code != 0 {
+		return nil, nil, code
+	}
+	scores := filescore.ScoreFiles(rep.Findings, nil)
+	return rep, scores, 0
 }
 
 // printJSONOrText prints data as JSON or text based on format.
@@ -562,45 +581,50 @@ func runAnalyze(args []string) int {
 
 // ─── audit ───
 
-func runAudit(args []string) int {
-	var (
-		baseRef = "origin/main"
-		format  = "text"
-		dir     = ""
-	)
+// auditOpts holds parsed audit command flags.
+type auditOpts struct {
+	baseRef string
+	format  string
+	dir     string
+}
 
+// parseAuditFlags parses audit command-line flags.
+func parseAuditFlags(args []string) auditOpts {
+	o := auditOpts{baseRef: "origin/main", format: "text", dir: ""}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--base-ref":
 			i++
 			if i < len(args) {
-				baseRef = args[i]
+				o.baseRef = args[i]
 			}
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		}
 	}
+	return o
+}
 
-	rep, ctx, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+func runAudit(args []string) int {
+	o := parseAuditFlags(args)
+	rep, ctx, _, code := loadAndAnalyze([]string{"--dir", o.dir, "--no-config"})
 	if code != 0 {
 		return code
 	}
-
-	auditRep, err := audit.RunAudit(ctx, baseRef, rep.Findings, dir)
+	auditRep, err := audit.RunAudit(ctx, o.baseRef, rep.Findings, o.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "audit error: %v\n", err)
 		return 1
 	}
-
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := json.MarshalIndent(auditRep, "", "  ")
 		fmt.Println(string(data))
@@ -609,7 +633,6 @@ func runAudit(args []string) int {
 	default:
 		fmt.Print(audit.FormatAuditText(auditRep))
 	}
-
 	if auditRep.Verdict == "fail" {
 		return 1
 	}
@@ -618,44 +641,45 @@ func runAudit(args []string) int {
 
 // ─── guard ───
 
-func runGuard(args []string) int {
-	var (
-		filePath string
-		format   = "text"
-		dir      = ""
-		rules    []string
-	)
+// guardOpts holds parsed guard command flags.
+type guardOpts struct {
+	filePath string
+	format   string
+	dir      string
+	rules    []string
+}
 
+// parseGuardFlags parses guard command-line flags.
+func parseGuardFlags(args []string) guardOpts {
+	o := guardOpts{format: "text", dir: ""}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		case "--rule":
 			i++
 			if i < len(args) {
-				rules = append(rules, args[i])
+				o.rules = append(o.rules, args[i])
 			}
 		default:
 			if !strings.HasPrefix(args[i], "-") {
-				filePath = args[i]
+				o.filePath = args[i]
 			}
 		}
 	}
+	return o
+}
 
-	if filePath == "" {
-		fmt.Fprintln(os.Stderr, "usage: gollaw guard <file.go> [--rule ...]")
-		return 1
-	}
-
-	// Load config for rules.
+// parseArchRules parses "A must not import B" rule strings into analyzer.Rule structs.
+func parseArchRules(rules []string) []analyzer.Rule {
 	var archRules []analyzer.Rule
 	for _, r := range rules {
 		parts := strings.SplitN(r, " must not import ", 2)
@@ -666,53 +690,42 @@ func runGuard(args []string) int {
 			})
 		}
 	}
+	return archRules
+}
 
-	// Load config file rules if available.
-	configPath := config.FindConfig(dir)
-	if configPath != "" {
-		fc, err := config.Load(configPath)
-		if err == nil && len(fc.Rules) > 0 && len(archRules) == 0 {
-			// Parse string rules into analyzer.Rule structs.
-			for _, r := range fc.Rules {
-				parts := strings.SplitN(r, " must not import ", 2)
-				if len(parts) == 2 {
-					archRules = append(archRules, analyzer.Rule{
-						Package:    strings.TrimSpace(parts[0]),
-						MustNotUse: strings.TrimSpace(parts[1]),
-					})
-				}
-			}
-		}
+// loadGuardRules collects architecture rules from CLI flags and config file.
+func loadGuardRules(o guardOpts) []analyzer.Rule {
+	archRules := parseArchRules(o.rules)
+	configPath := config.FindConfig(o.dir)
+	if configPath == "" {
+		return archRules
 	}
+	fc, err := config.Load(configPath)
+	if err != nil || len(fc.Rules) == 0 || len(archRules) > 0 {
+		return archRules
+	}
+	return append(archRules, parseArchRules(fc.Rules)...)
+}
 
-	// Load codebase.
-	result, err := loader.Load(loader.LoadConfig{
-		Patterns: []string{"./..."},
-		Dir:      dir,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
+func runGuard(args []string) int {
+	o := parseGuardFlags(args)
+	if o.filePath == "" {
+		fmt.Fprintln(os.Stderr, "usage: gollaw guard <file.go> [--rule ...]")
 		return 1
 	}
-
-	ctx := &analyzer.Context{
-		FSET:        result.FSET,
-		Packages:    result.Packages,
-		SSA:         result.SSA,
-		SSAByPkg:    result.SSAByPkg,
-		TypesByPkg:  result.TypesByPkg,
-		SyntaxByPkg: result.SyntaxByPkg,
-		Config:      analyzer.Config{Rules: archRules},
+	archRules := loadGuardRules(o)
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	absPath, _ := filepath.Abs(filePath)
+	ctx.Config = analyzer.Config{Rules: archRules}
+	absPath, _ := filepath.Abs(o.filePath)
 	guardRep, err := guard.BuildGuardReport(ctx, archRules, absPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "guard error: %v\n", err)
 		return 1
 	}
-
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := guard.FormatGuardJSON(guardRep)
 		fmt.Println(string(data))
@@ -724,63 +737,66 @@ func runGuard(args []string) int {
 
 // ─── explain ───
 
-func runExplain(args []string) int {
-	var (
-		symbol string
-		format = "text"
-		dir    = ""
-	)
+// explainOpts holds parsed explain command flags.
+type explainOpts struct {
+	symbol string
+	format string
+	dir    string
+}
 
+// parseExplainFlags parses explain command-line flags.
+func parseExplainFlags(args []string) explainOpts {
+	o := explainOpts{format: "text", dir: ""}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		default:
 			if !strings.HasPrefix(args[i], "-") {
-				symbol = args[i]
+				o.symbol = args[i]
 			}
 		}
 	}
+	return o
+}
 
-	if symbol == "" {
-		fmt.Fprintln(os.Stderr, "usage: gollaw explain <symbol>")
-		return 1
-	}
-
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
-	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
-	var exp *explain.Explanation
-	exp, err = explain.ExplainUnused(ctx, symbol)
+// resolveExplanation tries an unused explanation first, then a dead-code one.
+func resolveExplanation(ctx *analyzer.Context, symbol string) (*explain.Explanation, error) {
+	exp, err := explain.ExplainUnused(ctx, symbol)
 	if err != nil || exp == nil {
 		exp, err = explain.ExplainDead(ctx, symbol)
 	}
+	return exp, err
+}
+
+func runExplain(args []string) int {
+	o := parseExplainFlags(args)
+	if o.symbol == "" {
+		fmt.Fprintln(os.Stderr, "usage: gollaw explain <symbol>")
+		return 1
+	}
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
+	}
+	exp, err := resolveExplanation(ctx, o.symbol)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "explain error: %v\n", err)
 		return 1
 	}
 	if exp == nil {
-		fmt.Printf("symbol %q not found\n", symbol)
+		fmt.Printf("symbol %q not found\n", o.symbol)
 		return 1
 	}
-
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := json.MarshalIndent(exp, "", "  ")
 		fmt.Println(string(data))
@@ -792,76 +808,68 @@ func runExplain(args []string) int {
 
 // ─── trace ───
 
-func runTrace(args []string) int {
-	var (
-		symbol    string
-		direction = "callers"
-		format    = "text"
-		dir       = ""
-		maxDepth  = 10
-	)
+// traceOpts holds parsed trace command flags.
+type traceOpts struct {
+	symbol    string
+	direction string
+	format    string
+	dir       string
+	maxDepth  int
+}
 
+// parseTraceFlags parses trace command-line flags.
+func parseTraceFlags(args []string) traceOpts {
+	o := traceOpts{direction: "callers", format: "text", dir: "", maxDepth: 10}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--direction":
-			i++
-			if i < len(args) {
-				direction = args[i]
-			}
+			assignNextString(args, &i, &o.direction)
 		case "--format", "-f":
-			i++
-			if i < len(args) {
-				format = args[i]
-			}
+			assignNextString(args, &i, &o.format)
 		case "--dir":
-			i++
-			if i < len(args) {
-				dir = args[i]
-			}
+			assignNextString(args, &i, &o.dir)
 		case "--max-depth":
 			i++
 			if i < len(args) {
-				fmt.Sscanf(args[i], "%d", &maxDepth)
+				fmt.Sscanf(args[i], "%d", &o.maxDepth)
 			}
 		default:
 			if !strings.HasPrefix(args[i], "-") {
-				symbol = args[i]
+				o.symbol = args[i]
 			}
 		}
 	}
+	return o
+}
 
-	if symbol == "" {
+// traceForDirection dispatches the trace call based on the direction flag.
+func traceForDirection(ctx *analyzer.Context, symbol, direction string, maxDepth int) (*trace.TraceResult, error) {
+	if direction == "callees" {
+		return trace.TraceCallees(ctx, symbol, maxDepth)
+	}
+	return trace.TraceCallers(ctx, symbol, maxDepth)
+}
+
+func runTrace(args []string) int {
+	o := parseTraceFlags(args)
+	if o.symbol == "" {
 		fmt.Fprintln(os.Stderr, "usage: gollaw trace <symbol> [--direction callers|callees]")
 		return 1
 	}
-
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
-	var tr *trace.TraceResult
-	if direction == "callees" {
-		tr, err = trace.TraceCallees(ctx, symbol, maxDepth)
-	} else {
-		tr, err = trace.TraceCallers(ctx, symbol, maxDepth)
-	}
+	tr, err := traceForDirection(ctx, o.symbol, o.direction, o.maxDepth)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "trace error: %v\n", err)
 		return 1
 	}
 	if tr == nil {
-		fmt.Printf("symbol %q not found\n", symbol)
+		fmt.Printf("symbol %q not found\n", o.symbol)
 		return 1
 	}
-
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := json.MarshalIndent(tr, "", "  ")
 		fmt.Println(string(data))
@@ -873,64 +881,83 @@ func runTrace(args []string) int {
 
 // ─── baseline ───
 
-func runBaseline(args []string) int {
+// parseBaselineArgs extracts the baseline subcommand and --dir flag.
+func parseBaselineArgs(args []string) (sub string, dir string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: gollaw baseline <save|diff|show>")
-		return 1
+		return "", ""
 	}
-
-	dir := ""
+	sub = args[0]
 	for i := 1; i < len(args); i++ {
 		if args[i] == "--dir" && i+1 < len(args) {
 			dir = args[i+1]
 			i++
 		}
 	}
+	return sub, dir
+}
 
-	switch args[0] {
+// printFindingsList prints a list of findings indented under a section header.
+func printFindingsList(findings []analyzer.Finding) {
+	for _, f := range findings {
+		fmt.Printf("  %s %s:%d %s\n", f.Severity, f.File, f.Line, f.Message)
+	}
+}
+
+func runBaselineSave(dir string) int {
+	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	if code != 0 {
+		return code
+	}
+	if err := baseline.Save(dir, rep.Findings); err != nil {
+		fmt.Fprintf(os.Stderr, "save baseline: %v\n", err)
+		return 1
+	}
+	fmt.Printf("baseline saved: %d findings\n", len(rep.Findings))
+	return 0
+}
+
+func runBaselineDiff(dir string) int {
+	rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
+	if code != 0 {
+		return code
+	}
+	bl, err := baseline.Load(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load baseline: %v\n", err)
+		return 1
+	}
+	newFindings := baseline.Diff(bl, rep.Findings)
+	fmt.Printf("New findings since baseline: %d\n", len(newFindings))
+	printFindingsList(newFindings)
+	return 0
+}
+
+func runBaselineShow(dir string) int {
+	bl, err := baseline.Load(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load baseline: %v\n", err)
+		return 1
+	}
+	fmt.Printf("Baseline: %d findings\n", len(bl))
+	printFindingsList(bl)
+	return 0
+}
+
+func runBaseline(args []string) int {
+	sub, dir := parseBaselineArgs(args)
+	if sub == "" {
+		fmt.Fprintln(os.Stderr, "usage: gollaw baseline <save|diff|show>")
+		return 1
+	}
+	switch sub {
 	case "save":
-		rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
-		if code != 0 {
-			return code
-		}
-		if err := baseline.Save(dir, rep.Findings); err != nil {
-			fmt.Fprintf(os.Stderr, "save baseline: %v\n", err)
-			return 1
-		}
-		fmt.Printf("baseline saved: %d findings\n", len(rep.Findings))
-		return 0
-
+		return runBaselineSave(dir)
 	case "diff":
-		rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
-		if code != 0 {
-			return code
-		}
-		bl, err := baseline.Load(dir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "load baseline: %v\n", err)
-			return 1
-		}
-		newFindings := baseline.Diff(bl, rep.Findings)
-		fmt.Printf("New findings since baseline: %d\n", len(newFindings))
-		for _, f := range newFindings {
-			fmt.Printf("  %s %s:%d %s\n", f.Severity, f.File, f.Line, f.Message)
-		}
-		return 0
-
+		return runBaselineDiff(dir)
 	case "show":
-		bl, err := baseline.Load(dir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "load baseline: %v\n", err)
-			return 1
-		}
-		fmt.Printf("Baseline: %d findings\n", len(bl))
-		for _, f := range bl {
-			fmt.Printf("  %s %s:%d %s\n", f.Severity, f.File, f.Line, f.Message)
-		}
-		return 0
-
+		return runBaselineShow(dir)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown baseline command: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown baseline command: %s\n", sub)
 		return 1
 	}
 }
@@ -1125,27 +1152,8 @@ func runWatchCmd(args []string) int {
 
 // ─── init ───
 
-func runInit(args []string) int {
-	dir := "."
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		dir = args[0]
-	}
-
-	// Create directory if it doesn't exist.
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "create dir: %v\n", err)
-			return 1
-		}
-	}
-
-	configPath := filepath.Join(dir, ".gollaw.yaml")
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf(".gollaw.yaml already exists at %s\n", configPath)
-		return 1
-	}
-
-	defaultConfig := `# Gollaw configuration
+// defaultGollawConfig is the template written by `gollaw init`.
+const defaultGollawConfig = `# Gollaw configuration
 analyzers:
   enabled: []  # empty = all analyzers
   disabled: []
@@ -1169,7 +1177,23 @@ severity:
   min: hint  # critical, warning, info, hint
 `
 
-	if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
+func runInit(args []string) int {
+	dir := "."
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		dir = args[0]
+	}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "create dir: %v\n", err)
+			return 1
+		}
+	}
+	configPath := filepath.Join(dir, ".gollaw.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf(".gollaw.yaml already exists at %s\n", configPath)
+		return 1
+	}
+	if err := os.WriteFile(configPath, []byte(defaultGollawConfig), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "write config: %v\n", err)
 		return 1
 	}
@@ -1260,10 +1284,10 @@ func parseSeverity(s string) (analyzer.Severity, error) {
 
 func runFix(args []string) int {
 	var (
-		dir         = "."
+		dir          = "."
 		analyzerName string
-		dryRun      = false
-		format      = "text"
+		dryRun       = false
+		format       = "text"
 	)
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1305,54 +1329,53 @@ func runFix(args []string) int {
 
 // ─── inspect ───
 
-func runInspect(args []string) int {
-	var (
-		target string
-		dir    = "."
-		format = "text"
-	)
+// inspectOpts holds parsed inspect command flags.
+type inspectOpts struct {
+	target string
+	dir    string
+	format string
+}
+
+// parseInspectFlags parses inspect command-line flags.
+func parseInspectFlags(args []string) inspectOpts {
+	o := inspectOpts{dir: ".", format: "text"}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		default:
 			if !strings.HasPrefix(args[i], "-") {
-				target = args[i]
+				o.target = args[i]
 			}
 		}
 	}
+	return o
+}
 
-	if target == "" {
+func runInspect(args []string) int {
+	o := parseInspectFlags(args)
+	if o.target == "" {
 		fmt.Fprintln(os.Stderr, "usage: gollaw inspect <file|symbol>")
 		return 1
 	}
-
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
-	inspectResult, err := inspect.Inspect(ctx, target, dir)
+	inspectResult, err := inspect.Inspect(ctx, o.target, o.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "inspect error: %v\n", err)
 		return 1
 	}
-
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := inspect.FormatInspectJSON(inspectResult)
 		fmt.Println(string(data))
@@ -1533,54 +1556,53 @@ func runRulePack(args []string) int {
 
 // ─── impact ───
 
-func runImpact(args []string) int {
-	var (
-		dir        = "."
-		format     = "text"
-		baseRef    = ""
-		changedOnly = false
-	)
+// impactOpts holds parsed impact command flags.
+type impactOpts struct {
+	dir         string
+	format      string
+	baseRef     string
+	changedOnly bool
+}
+
+// parseImpactFlags parses impact command-line flags.
+func parseImpactFlags(args []string) impactOpts {
+	o := impactOpts{dir: ".", format: "text"}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		case "--base-ref":
 			i++
 			if i < len(args) {
-				baseRef = args[i]
-				changedOnly = true
+				o.baseRef = args[i]
+				o.changedOnly = true
 			}
 		}
 	}
+	return o
+}
 
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
+func runImpact(args []string) int {
+	o := parseImpactFlags(args)
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
 	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
 	g := graph.BuildGraph(ctx)
-
 	var changedFiles []string
-	if changedOnly && baseRef != "" {
-		changedFiles, _ = audit.GetChangedFiles(baseRef, dir)
+	if o.changedOnly && o.baseRef != "" {
+		changedFiles, _ = audit.GetChangedFiles(o.baseRef, o.dir)
 	}
-
 	impactRep := graph.BuildImpactReport(g, changedFiles)
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := graph.FormatImpactJSON(impactRep)
 		fmt.Println(string(data))
@@ -1594,16 +1616,11 @@ func runImpact(args []string) int {
 
 func runVitalSigns(args []string) int {
 	o := parseFormatDir(args)
-	rep, _, code := loadSimple(o.dir)
+	rep, scores, code := loadAndScore(o.dir)
 	if code != 0 {
 		return code
 	}
-	scores := filescore.ScoreFiles(rep.Findings, nil)
-	stats := reporter.CodebaseStats{
-		Packages: rep.Stats.Packages, Files: rep.Stats.Files,
-		Functions: rep.Stats.Functions, Types: rep.Stats.Types, Decls: rep.Stats.Decls,
-	}
-	vs := health.ComputeVitalSigns(rep.Findings, stats, scores, 0)
+	vs := health.ComputeVitalSigns(rep.Findings, rep.Stats, scores, 0)
 	printJSONOrText(o.format,
 		func() ([]byte, error) { return health.FormatVitalSignsJSON(vs) },
 		func() string { return health.FormatVitalSignsText(vs) })
@@ -1614,11 +1631,10 @@ func runVitalSigns(args []string) int {
 
 func runTargets(args []string) int {
 	o := parseFormatDir(args)
-	rep, _, code := loadSimple(o.dir)
+	rep, scores, code := loadAndScore(o.dir)
 	if code != 0 {
 		return code
 	}
-	scores := filescore.ScoreFiles(rep.Findings, nil)
 	targets := health.ComputeRefactoringTargets(rep.Findings, scores)
 	printJSONOrText(o.format,
 		func() ([]byte, error) { return health.FormatTargetsJSON(targets) },
@@ -1628,98 +1644,104 @@ func runTargets(args []string) int {
 
 // ─── trends ───
 
-func runTrends(args []string) int {
-	var (
-		dir    = "."
-		format = "text"
-		save   = false
-	)
+// trendsOpts holds parsed trends command flags.
+type trendsOpts struct {
+	dir    string
+	format string
+	save   bool
+}
+
+// parseTrendsFlags parses trends command-line flags.
+func parseTrendsFlags(args []string) trendsOpts {
+	o := trendsOpts{dir: ".", format: "text"}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		case "--save":
-			save = true
+			o.save = true
 		}
 	}
+	return o
+}
 
-	if save {
-		rep, _, _, code := loadAndAnalyze([]string{"--dir", dir, "--no-config"})
-		if code != 0 {
-			return code
-		}
-		scores := filescore.ScoreFiles(rep.Findings, nil)
-		stats := reporter.CodebaseStats{
-			Packages: rep.Stats.Packages, Files: rep.Stats.Files,
-			Functions: rep.Stats.Functions, Types: rep.Stats.Types, Decls: rep.Stats.Decls,
-		}
-		vs := health.ComputeVitalSigns(rep.Findings, stats, scores, 0)
-		if err := health.SaveSnapshot(dir, vs); err != nil {
-			fmt.Fprintf(os.Stderr, "save snapshot: %v\n", err)
-			return 1
-		}
-		fmt.Println("Snapshot saved.")
-		return 0
+func runTrendsSave(dir string) int {
+	rep, scores, code := loadAndScore(dir)
+	if code != 0 {
+		return code
 	}
+	vs := health.ComputeVitalSigns(rep.Findings, rep.Stats, scores, 0)
+	if err := health.SaveSnapshot(dir, vs); err != nil {
+		fmt.Fprintf(os.Stderr, "save snapshot: %v\n", err)
+		return 1
+	}
+	fmt.Println("Snapshot saved.")
+	return 0
+}
 
+func runTrendsShow(dir, format string) int {
 	result, err := health.LoadTrends(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load trends: %v\n", err)
 		return 1
 	}
-
-	switch format {
-	case "json":
-		data, _ := health.FormatTrendsJSON(result)
-		fmt.Println(string(data))
-	default:
-		fmt.Print(health.FormatTrendsText(result))
-	}
+	printJSONOrText(format,
+		func() ([]byte, error) { return health.FormatTrendsJSON(result) },
+		func() string { return health.FormatTrendsText(result) })
 	return 0
+}
+
+func runTrends(args []string) int {
+	o := parseTrendsFlags(args)
+	if o.save {
+		return runTrendsSave(o.dir)
+	}
+	return runTrendsShow(o.dir, o.format)
 }
 
 // ─── timings ───
 
-func runTimings(args []string) int {
-	var (
-		dir    = "."
-		format = "text"
-	)
+// timingsOpts holds parsed timings command flags.
+type timingsOpts struct {
+	dir    string
+	format string
+}
+
+// parseTimingsFlags parses timings command-line flags.
+func parseTimingsFlags(args []string) timingsOpts {
+	o := timingsOpts{dir: ".", format: "text"}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dir":
 			i++
 			if i < len(args) {
-				dir = args[i]
+				o.dir = args[i]
 			}
 		case "--format", "-f":
 			i++
 			if i < len(args) {
-				format = args[i]
+				o.format = args[i]
 			}
 		}
 	}
+	return o
+}
 
+func runTimings(args []string) int {
+	o := parseTimingsFlags(args)
+	ctx, _, code := loadResult(o.dir)
+	if code != 0 {
+		return code
+	}
 	timer := health.NewTimer()
-	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load: %v\n", err)
-		return 1
-	}
-
-	ctx := &analyzer.Context{
-		FSET: result.FSET, Packages: result.Packages, SSA: result.SSA,
-		SSAByPkg: result.SSAByPkg, TypesByPkg: result.TypesByPkg, SyntaxByPkg: result.SyntaxByPkg,
-	}
-
 	registry := analyzer.NewRegistry()
 	for _, a := range registry.All() {
 		findings, err := a.Analyze(ctx)
@@ -1728,9 +1750,8 @@ func runTimings(args []string) int {
 		}
 		timer.Record(a.Name(), len(findings))
 	}
-
 	timingReport := timer.Report()
-	switch format {
+	switch o.format {
 	case "json":
 		data, _ := health.FormatTimingsJSON(timingReport)
 		fmt.Println(string(data))

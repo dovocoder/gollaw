@@ -19,13 +19,25 @@ func partitionOrder(graph *ModuleGraph) [][]string {
 		layer[i] = -1
 	}
 
-	// Compute in-degree for each node (count of edges targeting it from within graph).
-	inDegree := make([]int, n)
+	inDegree := computeInDegree(graph)
+	currentLayer, processed := runKahnLayering(graph, inDegree, layer, n)
+	assignCycleLayers(layer, currentLayer, processed, n)
+	layers := groupNodesByLayer(graph, layer, currentLayer)
+	return layers
+}
+
+// computeInDegree counts edges targeting each node from within the graph.
+func computeInDegree(graph *ModuleGraph) []int {
+	inDegree := make([]int, len(graph.Nodes))
 	for _, edge := range graph.Edges {
 		inDegree[edge.Target]++
 	}
+	return inDegree
+}
 
-	// Kahn's algorithm with layering.
+// runKahnLayering executes Kahn's algorithm with layering, returning the
+// final layer count and the number of processed nodes.
+func runKahnLayering(graph *ModuleGraph, inDegree []int, layer []int, n int) (int, int) {
 	currentLayer := 0
 	queue := make([]int, 0)
 	for i := 0; i < n; i++ {
@@ -40,29 +52,41 @@ func partitionOrder(graph *ModuleGraph) [][]string {
 		nextQueue := make([]int, 0)
 		for _, node := range queue {
 			processed++
-			nodePath := graph.Nodes[node].Path
-			for _, depID := range graph.ForwardDeps(nodePath) {
-				inDegree[depID]--
-				if inDegree[depID] == 0 {
-					layer[depID] = currentLayer + 1
-					nextQueue = append(nextQueue, depID)
-				}
-			}
+			processNodeDeps(graph, node, inDegree, layer, currentLayer, &nextQueue)
 		}
 		queue = nextQueue
 		currentLayer++
 	}
+	return currentLayer, processed
+}
 
-	// If processed < n, there are cycles — remaining nodes get the max layer.
-	if processed < n {
-		for i := 0; i < n; i++ {
-			if layer[i] == -1 {
-				layer[i] = currentLayer
-			}
+// processNodeDeps decrements in-degree for dependents and queues ready nodes.
+func processNodeDeps(graph *ModuleGraph, node int, inDegree, layer []int, currentLayer int, nextQueue *[]int) {
+	nodePath := graph.Nodes[node].Path
+	for _, depID := range graph.ForwardDeps(nodePath) {
+		inDegree[depID]--
+		if inDegree[depID] == 0 {
+			layer[depID] = currentLayer + 1
+			*nextQueue = append(*nextQueue, depID)
 		}
 	}
+}
 
-	// Group by layer.
+// assignCycleLayers assigns remaining unprocessed nodes (in cycles) to max layer.
+func assignCycleLayers(layer []int, currentLayer, processed, n int) {
+	if processed >= n {
+		return
+	}
+	for i := 0; i < n; i++ {
+		if layer[i] == -1 {
+			layer[i] = currentLayer
+		}
+	}
+}
+
+// groupNodesByLayer groups node paths by their layer index, sorts each layer,
+// and trims empty trailing layers.
+func groupNodesByLayer(graph *ModuleGraph, layer []int, currentLayer int) [][]string {
 	numLayers := currentLayer + 1
 	layers := make([][]string, numLayers)
 	for i, node := range graph.Nodes {
@@ -71,11 +95,9 @@ func partitionOrder(graph *ModuleGraph) [][]string {
 			layers[l] = append(layers[l], node.Path)
 		}
 	}
-	// Remove empty trailing layers.
 	for len(layers) > 0 && len(layers[len(layers)-1]) == 0 {
 		layers = layers[:len(layers)-1]
 	}
-	// Sort within each layer for deterministic output.
 	for i := range layers {
 		sort.Strings(layers[i])
 	}
