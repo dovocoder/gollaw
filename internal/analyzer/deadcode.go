@@ -253,6 +253,7 @@ func isTestFunction(fn *ssa.Function) bool {
 	return len(name) > 4 && (name[:4] == "Test" || name[:4] == "Bench" || name[:4] == "Fuzz" || name == "TestMain")
 }
 
+//gollaw:keep
 func cleanFuncName(fn *ssa.Function) string {
 	if fn.Object() != nil && fn.Object().Pkg() != nil {
 		return fmt.Sprintf("%s.%s", fn.Object().Pkg().Name(), fn.Name())

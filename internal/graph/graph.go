@@ -8,26 +8,21 @@ import (
 )
 
 // ModuleGraph is the dependency graph of Go packages in a codebase.
-//gollaw:keep
 type ModuleGraph struct {
 	// Nodes holds one node per Go package, indexed by node ID.
-	Nodes []ModuleNode
+	Nodes []moduleNode
 	// Edges holds import relationships between packages.
-	Edges []ModuleEdge
-	//gollaw:keep
+	Edges []moduleEdge
 	// reverseDeps maps a package path → node IDs of packages that import it (fan-in targets).
 	reverseDeps map[string][]int
-	//gollaw:keep
 	// forwardDeps maps a package path → node IDs of packages it imports (fan-out targets).
 	forwardDeps map[string][]int
-	//gollaw:keep
 	// pathIndex maps a package path → node ID for O(1) lookup.
 	pathIndex map[string]int
 }
 
-// ModuleNode represents a single Go package in the graph.
-//gollaw:keep
-type ModuleNode struct {
+// moduleNode represents a single Go package in the graph.
+type moduleNode struct {
 	Path         string
 	Name         string
 	Files        []string
@@ -35,9 +30,8 @@ type ModuleNode struct {
 	IsReachable  bool
 }
 
-// ModuleEdge represents an import relationship from one package to another.
-//gollaw:keep
-type ModuleEdge struct {
+// moduleEdge represents an import relationship from one package to another.
+type moduleEdge struct {
 	Source  int
 	Target  int
 	Imports []string
@@ -64,7 +58,7 @@ func BuildGraph(ctx *analyzer.Context) *ModuleGraph {
 			continue
 		}
 		id := len(g.Nodes)
-		node := ModuleNode{
+		node := moduleNode{
 			Path: pkg.PkgPath,
 			Name: pkg.Name,
 		}
@@ -96,7 +90,7 @@ func BuildGraph(ctx *analyzer.Context) *ModuleGraph {
 			if srcID == tgtID {
 				continue // skip self-edges
 			}
-			edge := ModuleEdge{
+			edge := moduleEdge{
 				Source:  srcID,
 				Target:  tgtID,
 				Imports: importedSymbols[impPath],
@@ -178,6 +172,7 @@ func appendUniqueInt(slice []int, v int) []int {
 	return append(slice, v)
 }
 
+//gollaw:keep
 func appendUniqueString(slice []string, v string) []string {
 	for _, existing := range slice {
 		if existing == v {

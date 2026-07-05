@@ -119,6 +119,7 @@ func FormatExplanation(e *Explanation) string {
 
 // findFunction searches all SSA packages for a function matching the given
 // name. Matches against fn.Name(), fn.String(), and "Type.Method" patterns.
+//gollaw:keep
 func findFunction(ctx *analyzer.Context, name string) *ssa.Function {
 	if ctx.SSA == nil {
 		return nil
@@ -159,6 +160,7 @@ func findFunction(ctx *analyzer.Context, name string) *ssa.Function {
 }
 
 // matchFunctionName checks if an SSA function matches the requested symbol name.
+//gollaw:keep
 func matchFunctionName(fn *ssa.Function, name string) bool {
 	if fn.Name() == name {
 		return true
@@ -475,6 +477,7 @@ func ssaToCallNode(ctx *analyzer.Context, fn *ssa.Function) CallNode {
 }
 
 // funcLocation returns "file:line" for an SSA function.
+//gollaw:keep
 func funcLocation(ctx *analyzer.Context, fn *ssa.Function) string {
 	pos := ctx.FSET.Position(fn.Pos())
 	return fmt.Sprintf("%s:%d", pos.Filename, pos.Line)
@@ -489,6 +492,7 @@ func funcKind(fn *ssa.Function) string {
 }
 
 // funcPackage returns the package path for a function.
+//gollaw:keep
 func funcPackage(fn *ssa.Function) string {
 	if fn.Pkg != nil && fn.Pkg.Pkg != nil {
 		return fn.Pkg.Pkg.Path()

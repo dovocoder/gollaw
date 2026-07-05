@@ -7,25 +7,23 @@ import (
 	"strings"
 )
 
-// WorkspaceInfo holds Go workspace information from go.work.
-//gollaw:keep
-type WorkspaceInfo struct {
+// workspaceInfo holds Go workspace information from go.work.
+type workspaceInfo struct {
 	Root        string
-	Modules     []ModuleInfo
+	Modules     []moduleInfo
 	GoVersion   string
 }
 
-// ModuleInfo holds information about a single Go module.
-//gollaw:keep
-type ModuleInfo struct {
+// moduleInfo holds information about a single Go module.
+type moduleInfo struct {
 	Path    string
 	Version string
 	Replace string
 }
 
-// DetectWorkspace finds and parses go.work from the given directory.
+// detectWorkspace finds and parses go.work from the given directory.
 //gollaw:keep
-func DetectWorkspace(dir string) (*WorkspaceInfo, error) {
+func detectWorkspace(dir string) (*workspaceInfo, error) {
 	goWorkPath := findFileUpward(dir, "go.work")
 	if goWorkPath == "" {
 		return nil, fmt.Errorf("no go.work found")
@@ -36,7 +34,7 @@ func DetectWorkspace(dir string) (*WorkspaceInfo, error) {
 		return nil, err
 	}
 
-	info := &WorkspaceInfo{
+	info := &workspaceInfo{
 		Root: filepath.Dir(goWorkPath),
 	}
 
@@ -53,16 +51,16 @@ func DetectWorkspace(dir string) (*WorkspaceInfo, error) {
 				absPath = filepath.Join(info.Root, modPath)
 			}
 			modName := getModuleName(absPath)
-			info.Modules = append(info.Modules, ModuleInfo{Path: modName})
+			info.Modules = append(info.Modules, moduleInfo{Path: modName})
 		}
 	}
 
 	return info, nil
 }
 
-// ResolveModule finds the go.mod for the current directory.
+// resolveModule finds the go.mod for the current directory.
 //gollaw:keep
-func ResolveModule(dir string) (string, error) {
+func resolveModule(dir string) (string, error) {
 	goModPath := findFileUpward(dir, "go.mod")
 	if goModPath == "" {
 		return "", fmt.Errorf("no go.mod found")
@@ -70,22 +68,23 @@ func ResolveModule(dir string) (string, error) {
 	return goModPath, nil
 }
 
-// ListWorkspaceModules lists all modules in a workspace.
+// listWorkspaceModules lists all modules in a workspace.
 //gollaw:keep
-func ListWorkspaceModules(dir string) ([]ModuleInfo, error) {
-	info, err := DetectWorkspace(dir)
+func listWorkspaceModules(dir string) ([]moduleInfo, error) {
+	info, err := detectWorkspace(dir)
 	if err != nil {
 		return nil, err
 	}
 	return info.Modules, nil
 }
 
-// IsWorkspaceMode checks if go.work exists.
+// isWorkspaceMode checks if go.work exists.
 //gollaw:keep
-func IsWorkspaceMode(dir string) bool {
+func isWorkspaceMode(dir string) bool {
 	return findFileUpward(dir, "go.work") != ""
 }
 
+//gollaw:keep
 func findFileUpward(dir, filename string) string {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -105,6 +104,7 @@ func findFileUpward(dir, filename string) string {
 	return ""
 }
 
+//gollaw:keep
 func getModuleName(dir string) string {
 	goMod := filepath.Join(dir, "go.mod")
 	data, err := os.ReadFile(goMod)

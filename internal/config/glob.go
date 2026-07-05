@@ -6,16 +6,14 @@ import (
 	"strings"
 )
 
-// GlobMatcher matches file paths against a glob pattern.
-//gollaw:keep
-type GlobMatcher struct {
-	//gollaw:keep
+// globMatcher matches file paths against a glob pattern.
+type globMatcher struct {
 	pattern string
 }
 
-// ValidateGlob validates that a glob pattern is well-formed.
+// validateGlob validates that a glob pattern is well-formed.
 //gollaw:keep
-func ValidateGlob(pattern string) error {
+func validateGlob(pattern string) error {
 	if pattern == "" {
 		return fmt.Errorf("empty pattern")
 	}
@@ -38,21 +36,21 @@ func ValidateGlob(pattern string) error {
 	return nil
 }
 
-// CompilePatterns compiles glob patterns to matchers.
+// compilePatterns compiles glob patterns to matchers.
 //gollaw:keep
-func CompilePatterns(patterns []string) ([]*GlobMatcher, error) {
-	var matchers []*GlobMatcher
+func compilePatterns(patterns []string) ([]*globMatcher, error) {
+	var matchers []*globMatcher
 	for _, p := range patterns {
-		if err := ValidateGlob(p); err != nil {
+		if err := validateGlob(p); err != nil {
 			return nil, err
 		}
-		matchers = append(matchers, &GlobMatcher{pattern: p})
+		matchers = append(matchers, &globMatcher{pattern: p})
 	}
 	return matchers, nil
 }
 
 // Match checks if a path matches this glob pattern.
-func (m *GlobMatcher) Match(path string) bool {
+func (m *globMatcher) Match(path string) bool {
 	pattern := m.pattern
 	// Handle ** (recursive match)
 	if strings.Contains(pattern, "**") {
@@ -70,9 +68,9 @@ func (m *GlobMatcher) Match(path string) bool {
 	return matched
 }
 
-// MatchAny tests if a path matches any of the matchers.
+// matchAny tests if a path matches any of the matchers.
 //gollaw:keep
-func MatchAny(matchers []*GlobMatcher, path string) bool {
+func matchAny(matchers []*globMatcher, path string) bool {
 	for _, m := range matchers {
 		if m.Match(path) {
 			return true
@@ -81,12 +79,12 @@ func MatchAny(matchers []*GlobMatcher, path string) bool {
 	return false
 }
 
-// ListInvalidPatterns returns patterns that fail validation.
+// listInvalidPatterns returns patterns that fail validation.
 //gollaw:keep
-func ListInvalidPatterns(patterns []string) []string {
+func listInvalidPatterns(patterns []string) []string {
 	var invalid []string
 	for _, p := range patterns {
-		if err := ValidateGlob(p); err != nil {
+		if err := validateGlob(p); err != nil {
 			invalid = append(invalid, p)
 		}
 	}

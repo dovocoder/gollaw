@@ -11,23 +11,19 @@ import (
 
 // Suppressions holds all parsed suppression directives from source comments.
 type Suppressions struct {
-	//gollaw:keep
 	// fileIgnoreAll maps file paths that have a //gollaw:ignore-all comment.
 	fileIgnoreAll map[string]bool
 
-	//gollaw:keep
 	// declIgores maps file → line → analyzer name → true.
 	// The line is the line of the declaration the suppression applies to.
 	declIgnores map[string]map[int]map[string]bool
 
-	//gollaw:keep
 	// entries records every suppression comment found, for staleness checking.
-	entries []SuppressionEntry
+	entries []suppressionEntry
 }
 
-// SuppressionEntry records a single suppression comment and its metadata.
-//gollaw:keep
-type SuppressionEntry struct {
+// suppressionEntry records a single suppression comment and its metadata.
+type suppressionEntry struct {
 	File     string
 	Line     int // line of the comment
 	DeclLine int // line of the declaration it applies to (0 for file-level)
@@ -36,9 +32,8 @@ type SuppressionEntry struct {
 	Text     string // original comment text
 }
 
-// StaleSuppression represents a suppression that no longer matches any finding.
-//gollaw:keep
-type StaleSuppression struct {
+// staleSuppression represents a suppression that no longer matches any finding.
+type staleSuppression struct {
 	File     string
 	Line     int
 	DeclLine int
@@ -82,7 +77,7 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 					fileName := fset.Position(c.Pos()).Filename
 					sup.fileIgnoreAll[fileName] = true
 					pos := fset.Position(c.Pos())
-					sup.entries = append(sup.entries, SuppressionEntry{
+					sup.entries = append(sup.entries, suppressionEntry{
 						File:     fileName,
 						Line:     pos.Line,
 						DeclLine: 0,
@@ -141,7 +136,7 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 }
 
 // Entries returns all parsed suppression entries.
-func (s *Suppressions) Entries() []SuppressionEntry {
+func (s *Suppressions) Entries() []suppressionEntry {
 	if s == nil {
 		return nil
 	}
@@ -181,7 +176,7 @@ func (s *Suppressions) parseSuppressionText(text, fileName string, declLine, com
 	case text == prefixKeep || strings.HasPrefix(text, prefixKeep+" "):
 		// Suppress ALL analyzers for this declaration.
 		s.addDeclIgnore(fileName, declLine, "*")
-		s.entries = append(s.entries, SuppressionEntry{
+		s.entries = append(s.entries, suppressionEntry{
 			File:     fileName,
 			Line:     commentLine,
 			DeclLine: declLine,
@@ -195,7 +190,7 @@ func (s *Suppressions) parseSuppressionText(text, fileName string, declLine, com
 		analyzerName := strings.TrimSpace(strings.TrimPrefix(text, prefixIgnore+" "))
 		if analyzerName != "" {
 			s.addDeclIgnore(fileName, declLine, analyzerName)
-			s.entries = append(s.entries, SuppressionEntry{
+			s.entries = append(s.entries, suppressionEntry{
 				File:     fileName,
 				Line:     commentLine,
 				DeclLine: declLine,
@@ -219,9 +214,8 @@ func (s *Suppressions) addDeclIgnore(fileName string, declLine int, analyzerName
 	s.declIgnores[fileName][declLine][analyzerName] = true
 }
 
-// IsSuppressed checks whether a finding is suppressed by any directive.
-//gollaw:keep
-func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
+// isSuppressed checks whether a finding is suppressed by any directive.
+func isSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 	if sup == nil {
 		return false
 	}
@@ -266,7 +260,7 @@ func FilterSuppressed(findings []analyzer.Finding, sup *Suppressions) []analyzer
 	}
 	result := make([]analyzer.Finding, 0, len(findings))
 	for _, f := range findings {
-		if !IsSuppressed(f, sup) {
+		if !isSuppressed(f, sup) {
 			result = append(result, f)
 		}
 	}
@@ -276,7 +270,7 @@ func FilterSuppressed(findings []analyzer.Finding, sup *Suppressions) []analyzer
 // FindStale returns suppressions that no longer match any finding.
 // A suppression is stale if no finding exists at its target location
 // for the suppressed analyzer.
-func FindStale(findings []analyzer.Finding, sup *Suppressions) []StaleSuppression {
+func FindStale(findings []analyzer.Finding, sup *Suppressions) []staleSuppression {
 	if sup == nil || len(sup.entries) == 0 {
 		return nil
 	}
@@ -295,7 +289,7 @@ func FindStale(findings []analyzer.Finding, sup *Suppressions) []StaleSuppressio
 		findingSet[findingKey{f.File, f.Line, f.Analyzer}] = true
 	}
 
-	var stale []StaleSuppression
+	var stale []staleSuppression
 	for _, entry := range sup.entries {
 		if entry.Type == "ignore-all" {
 			// File-level: stale if the file has no findings at all.
@@ -307,7 +301,7 @@ func FindStale(findings []analyzer.Finding, sup *Suppressions) []StaleSuppressio
 				}
 			}
 			if !hasFinding {
-				stale = append(stale, StaleSuppression{
+				stale = append(stale, staleSuppression{
 					File:     entry.File,
 					Line:     entry.Line,
 					DeclLine: 0,
@@ -350,7 +344,7 @@ func FindStale(findings []analyzer.Finding, sup *Suppressions) []StaleSuppressio
 				msg += fmt.Sprintf(", declLine=%d", entry.DeclLine)
 			}
 			msg += ") no longer matches any finding"
-			stale = append(stale, StaleSuppression{
+			stale = append(stale, staleSuppression{
 				File:     entry.File,
 				Line:     entry.Line,
 				DeclLine: entry.DeclLine,

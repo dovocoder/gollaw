@@ -8,9 +8,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ThresholdOverride holds per-package threshold overrides.
-//gollaw:keep
-type ThresholdOverride struct {
+// thresholdOverride holds per-package threshold overrides.
+type thresholdOverride struct {
 	Package         string `yaml:"package"         json:"package"`
 	MaxCyclomatic   int    `yaml:"max-cyclomatic"  json:"maxCyclomatic"`
 	MaxCognitive    int    `yaml:"max-cognitive"   json:"maxCognitive"`
@@ -18,10 +17,9 @@ type ThresholdOverride struct {
 	MinDupLines     int    `yaml:"min-dup-lines"   json:"minDupLines"`
 }
 
-// ThresholdConfig holds all threshold configuration including per-package overrides.
-//gollaw:keep
-type ThresholdConfig struct {
-	Overrides             []ThresholdOverride `yaml:"overrides" json:"overrides"`
+// thresholdConfig holds all threshold configuration including per-package overrides.
+type thresholdConfig struct {
+	Overrides             []thresholdOverride `yaml:"overrides" json:"overrides"`
 	DefaultMaxCyclomatic  int                 `yaml:"default-max-cyclomatic" json:"defaultMaxCyclomatic"`
 	DefaultMaxCognitive   int                 `yaml:"default-max-cognitive" json:"defaultMaxCognitive"`
 	DefaultMaxFunctionLines int               `yaml:"default-max-function-lines" json:"defaultMaxFunctionLines"`
@@ -30,13 +28,13 @@ type ThresholdConfig struct {
 
 // thresholdsFile is the YAML structure for the thresholds section of .gollaw.yaml.
 type thresholdsFile struct {
-	Thresholds ThresholdConfig `yaml:"thresholds"`
+	Thresholds thresholdConfig `yaml:"thresholds"`
 }
 
-// DefaultThresholdConfig returns sensible default thresholds.
+// defaultThresholdConfig returns sensible default thresholds.
 //gollaw:keep
-func DefaultThresholdConfig() *ThresholdConfig {
-	return &ThresholdConfig{
+func defaultThresholdConfig() *thresholdConfig {
+	return &thresholdConfig{
 		Overrides:               nil,
 		DefaultMaxCyclomatic:    15,
 		DefaultMaxCognitive:     20,
@@ -45,18 +43,18 @@ func DefaultThresholdConfig() *ThresholdConfig {
 	}
 }
 
-// LoadThresholds reads threshold configuration from a .gollaw.yaml file.
+// loadThresholds reads threshold configuration from a .gollaw.yaml file.
 // If the file doesn't exist or has no thresholds section, defaults are returned.
 //gollaw:keep
-func LoadThresholds(configPath string) (*ThresholdConfig, error) {
+func loadThresholds(configPath string) (*thresholdConfig, error) {
 	if configPath == "" {
-		return DefaultThresholdConfig(), nil
+		return defaultThresholdConfig(), nil
 	}
 
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return DefaultThresholdConfig(), nil
+			return defaultThresholdConfig(), nil
 		}
 		return nil, fmt.Errorf("read config %s: %w", configPath, err)
 	}
@@ -69,7 +67,7 @@ func LoadThresholds(configPath string) (*ThresholdConfig, error) {
 	cfg := tf.Thresholds
 
 	// Apply defaults for zero values
-	d := DefaultThresholdConfig()
+	d := defaultThresholdConfig()
 	if cfg.DefaultMaxCyclomatic == 0 {
 		cfg.DefaultMaxCyclomatic = d.DefaultMaxCyclomatic
 	}
@@ -86,11 +84,11 @@ func LoadThresholds(configPath string) (*ThresholdConfig, error) {
 	return &cfg, nil
 }
 
-// GetThreshold returns the threshold value for a given package and kind.
+// getThreshold returns the threshold value for a given package and kind.
 // kind is one of: "max-cyclomatic", "max-cognitive", "max-function-lines", "min-dup-lines".
 // If a per-package override exists, it's used; otherwise the default is returned.
 //gollaw:keep
-func GetThreshold(t *ThresholdConfig, pkgPath string, kind string) int {
+func getThreshold(t *thresholdConfig, pkgPath string, kind string) int {
 	if t == nil {
 		return 0
 	}
@@ -108,6 +106,7 @@ func GetThreshold(t *ThresholdConfig, pkgPath string, kind string) int {
 
 // matchPackage checks if an override package pattern matches a package path.
 // Supports prefix matching (e.g. "internal/api" matches "internal/api/v2").
+//gollaw:keep
 func matchPackage(pattern, pkgPath string) bool {
 	if pattern == pkgPath {
 		return true
@@ -119,7 +118,8 @@ func matchPackage(pattern, pkgPath string) bool {
 	return false
 }
 
-func thresholdFromOverride(o *ThresholdOverride, kind string) int {
+//gollaw:keep
+func thresholdFromOverride(o *thresholdOverride, kind string) int {
 	switch kind {
 	case "max-cyclomatic":
 		if o.MaxCyclomatic > 0 {
@@ -142,7 +142,8 @@ func thresholdFromOverride(o *ThresholdOverride, kind string) int {
 	return 0
 }
 
-func thresholdFromDefault(t *ThresholdConfig, kind string) int {
+//gollaw:keep
+func thresholdFromDefault(t *thresholdConfig, kind string) int {
 	switch kind {
 	case "max-cyclomatic":
 		return t.DefaultMaxCyclomatic
@@ -157,10 +158,10 @@ func thresholdFromDefault(t *ThresholdConfig, kind string) int {
 	}
 }
 
-// ValidateThresholds checks the threshold configuration and returns a list of
+// validateThresholds checks the threshold configuration and returns a list of
 // warning strings for any invalid thresholds.
 //gollaw:keep
-func ValidateThresholds(t *ThresholdConfig) []string {
+func validateThresholds(t *thresholdConfig) []string {
 	var warnings []string
 
 	if t == nil {
