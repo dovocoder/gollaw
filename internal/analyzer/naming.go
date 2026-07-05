@@ -201,7 +201,26 @@ func checkInitialisms(kind, name string, pos token.Position) []Finding {
 	return findings
 }
 
+// goInitialisms are standard Go initialisms that are always uppercase.
+// From https://github.com/golang/lint/blob/master/lint.go#L702
+var goInitialisms = map[string]bool{
+	"ACL":   true, "API":   true, "ASCII": true, "CPU":   true, "CSS":   true,
+	"DNS":   true, "EOF":   true, "GUID":  true, "HTML":  true, "HTTP":  true,
+	"HTTPS": true, "ID":    true, "IP":    true, "JSON":  true, "LHS":   true,
+	"QPS":   true, "RAM":   true, "RHS":   true, "RPC":   true, "SLA":   true,
+	"SMTP":  true, "SQL":   true, "SSH":   true, "TCP":   true, "TLS":   true,
+	"TTL":   true, "UDP":   true, "UI":    true, "UID":   true, "UUID":  true,
+	"URI":   true, "URL":   true, "UTF8":  true, "VM":    true, "XML":   true,
+	"XMPP":  true, "XSRF":  true, "XSS":   true, "DB":    true, "DBTX":  true,
+	"WA":    true, "FTS":   true, "FTS5":  true, "JID":   true, "CGO":   true,
+	"OS":    true, "IO":    true, "GPU":   true, "I18N":  true, "L10N":  true,
+}
+
 func isAllCaps(s string) bool {
+	// Skip known Go initialisms (DB, API, URL, etc.)
+	if goInitialisms[s] {
+		return false
+	}
 	for _, r := range s {
 		if r == '_' {
 			continue
