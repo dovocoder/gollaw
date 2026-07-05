@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"go/types"
+	"strings"
 )
 
 // apiSurfaceAnalyzer tracks which exported symbols form the intentional API surface vs accidental exports.
@@ -106,6 +107,10 @@ func (a *apiSurfaceAnalyzer) checkSymbolUsage(ctx *Context, pkgPath, name string
 	if pos.Filename == "" {
 		return Finding{}, false
 	}
+	// Skip generated files (sqlc, protoc, mockgen, etc.)
+	if isGeneratedFile(pos.Filename) {
+		return Finding{}, false
+	}
 	severity := SeverityInfo
 	if len(users) == 0 {
 		severity = SeverityWarning
@@ -121,6 +126,19 @@ func (a *apiSurfaceAnalyzer) checkSymbolUsage(ctx *Context, pkgPath, name string
 		Suggestion:  "Unexport the symbol (rename to lowercase) if it's not part of the public API",
 		RuleID:      "GLW-AS001",
 	}, true
+}
+
+// isGeneratedFile returns true if the file appears to be auto-generated.
+func isGeneratedFile(filename string) bool {
+	// Check for common generated file patterns in the path
+	for _, pattern := range []string{"/storedb/", "/sqlc/", "/mock/", "/mocks/", "/generated/", "/gen/"} {
+		if strings.Contains(filename, pattern) {
+			return true
+		}
+	}
+	// Could also check file content for "Code generated" comment,
+	// but path-based check is sufficient for most cases.
+	return false
 }
 
 // isOnlyUsedByOwnPackage returns true if the symbol is used only by its own
