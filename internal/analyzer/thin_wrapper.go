@@ -94,6 +94,18 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				if isCobraSubcommandConstructor(fn) {
 					continue
 				}
+				// Skip default-parameter wrappers (sendTextMessage → sendTextMessageWithSender)
+				if isDefaultParameterWrapper(fn) {
+					continue
+				}
+				// Skip third-party adapter wrappers (term.IsTerminal, tabwriter.NewWriter)
+				if isThirdPartyWrapper(fn) {
+					continue
+				}
+				// Skip semantic aliases (FileURI → String, canonicalJIDString → String)
+				if isSemanticAlias(fn) {
+					continue
+				}
 				// Skip very short functions (< 3 statements).
 				stmts := fn.Body.List
 				if len(stmts) < 1 || len(stmts) > 3 {
@@ -331,6 +343,104 @@ func isCobraSubcommandConstructor(fn *ast.FuncDecl) bool {
 		return true
 	})
 	return found
+}
+
+// isDefaultParameterWrapper returns true if the function is a wrapper that
+// adds a default parameter to another function call — i.e., the wrapper name
+// is a prefix of the wrapped function name (e.g., sendTextMessage wraps
+// sendTextMessageWithSender, buildPollVoteInfo wraps buildPollVoteInfoForChats).
+// This is a standard Go pattern for providing default arguments.
+func isDefaultParameterWrapper(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	if fn.Body == nil {
+		return false
+	}
+	// Find all called function names in the body
+	var calledNames []string
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok {
+				calledNames = append(calledNames, ident.Name)
+			}
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				calledNames = append(calledNames, sel.Sel.Name)
+			}
+		}
+		return true
+	})
+	// Check if any called name has the wrapper name as a prefix
+	for _, called := range calledNames {
+		if called == name {
+			continue
+		}
+		// e.g., sendTextMessage → sendTextMessageWithSender
+		if strings.HasPrefix(called, name) && len(called) > len(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// isThirdPartyWrapper returns true if the function wraps a call to a
+// third-party package function (e.g., term.IsTerminal, tabwriter.NewWriter,
+// sender.SendPoll). These are adapter patterns, not code smells.
+func isThirdPartyWrapper(fn *ast.FuncDecl) bool {
+	if fn.Body == nil {
+		return false
+	}
+	var found bool
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				if pkg, ok := sel.X.(*ast.Ident); ok {
+					// Common third-party package prefixes
+					switch pkg.Name {
+					case "term", "tabwriter", "sender", "cli", "flag",
+						"color", "tablewriter", "readline", "promptui":
+						found = true
+						return false
+					}
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isSemanticAlias returns true if the function is a semantic alias — a
+// wrapper that provides a more specific name for a general function
+// (e.g., FileURI → String, canonicalJIDString → String,
+// callLogMessageOutcome → cleanCallValue). These are intentional API design.
+func isSemanticAlias(fn *ast.FuncDecl) bool {
+	name := fn.Name.Name
+	if fn.Body == nil {
+		return false
+	}
+	// Find the primary called function name
+	var calledName string
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok && calledName == "" {
+				calledName = ident.Name
+			}
+		}
+		return true
+	})
+	if calledName == "" {
+		return false
+	}
+	// If the wrapper name is longer/more specific than the called name,
+	// it's likely a semantic alias
+	if len(name) > len(calledName)+3 {
+		return true
+	}
+	// If the called name is very generic (String, Clean, Format, etc.)
+	switch calledName {
+	case "String", "Clean", "Format", "Stringer", "Value":
+		return true
+	}
+	return false
 }
 
 // isCobraConstructor returns true if the function body contains an actual
