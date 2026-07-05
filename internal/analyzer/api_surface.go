@@ -14,8 +14,13 @@ func (a *apiSurfaceAnalyzer) Category() Category   { return CategoryUnused }
 func (a *apiSurfaceAnalyzer) Description() string  { return "Tracks intentional public API vs accidental exports" }
 
 func (a *apiSurfaceAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	var findings []Finding
+	symbolUsage := a.collectSymbolUsage(ctx)
+	return a.checkAccidentalExports(ctx, symbolUsage), nil
+}
 
+// collectSymbolUsage builds a map of exported symbol keys to the set of
+// packages that reference them.
+func (a *apiSurfaceAnalyzer) collectSymbolUsage(ctx *Context) map[string]map[string]bool {
 	symbolUsage := make(map[string]map[string]bool)
 	for _, pkg := range ctx.Packages {
 		if pkg.TypesInfo == nil {
@@ -63,6 +68,13 @@ func (a *apiSurfaceAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			symbolUsage[key][usingPkg] = true
 		}
 	}
+	return symbolUsage
+}
+
+// checkAccidentalExports finds exported symbols that are only used within
+// their own package (or not used at all).
+func (a *apiSurfaceAnalyzer) checkAccidentalExports(ctx *Context, symbolUsage map[string]map[string]bool) []Finding {
+	var findings []Finding
 
 	for pkgPath, pkg := range ctx.TypesByPkg {
 		scope := pkg.Scope()
@@ -109,7 +121,7 @@ func (a *apiSurfaceAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	return findings, nil
+	return findings
 }
 
 func implementsInterface(obj types.Object, ctx *Context) bool {

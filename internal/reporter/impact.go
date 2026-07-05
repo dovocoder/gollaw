@@ -6,6 +6,7 @@ import (
 )
 
 // ImpactReport is a per-category and per-severity issue count report for tracking over time.
+//gollaw:keep
 type ImpactReport struct {
 	TotalIssues      int            `json:"total_issues"`
 	ByCategory       map[string]int `json:"by_category"`
@@ -16,6 +17,7 @@ type ImpactReport struct {
 }
 
 // FormatImpact renders an impact report as JSON with per-category and per-severity counts.
+//gollaw:keep
 func FormatImpact(report *Report) ([]byte, error) {
 	byCategory := make(map[string]int)
 	bySeverity := map[string]int{

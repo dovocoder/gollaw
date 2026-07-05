@@ -11,7 +11,7 @@ type reExportCyclesAnalyzer struct{}
 func newReExportCyclesAnalyzer() *reExportCyclesAnalyzer { return &reExportCyclesAnalyzer{} }
 
 func (a *reExportCyclesAnalyzer) Name() string        { return "re-export-cycles" }
-func (a *reExportCyclesAnalyzer) Category() Category   { return CategoryDependencies }
+func (a *reExportCyclesAnalyzer) Category() Category   { return categoryDependencies }
 func (a *reExportCyclesAnalyzer) Description() string  { return "Detects re-export cycles between packages" }
 
 func (a *reExportCyclesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
@@ -70,7 +70,7 @@ func (a *reExportCyclesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		if cycle := dfs(pkgPath, nil); cycle != nil {
 			findings = append(findings, Finding{
 				Analyzer:  a.Name(),
-				Category:  CategoryDependencies,
+				Category:  categoryDependencies,
 				Severity:  SeverityWarning,
 				Message:    "re-export cycle: " + strings.Join(cycle, " → "),
 				Detail:     "These packages re-export types from each other in a cycle, creating tight coupling.",

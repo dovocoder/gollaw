@@ -3,6 +3,7 @@ package graph
 import "sort"
 
 // FanIOStats holds fan-in/fan-out metrics for a single package.
+//gollaw:keep
 type FanIOStats struct {
 	Package       string
 	FanIn         int
@@ -11,29 +12,28 @@ type FanIOStats struct {
 }
 
 // FanIORankingResult holds the top-N most imported packages and top-N importers.
+//gollaw:keep
 type FanIORankingResult struct {
 	TopImported  []FanIOStats
 	TopImporters []FanIOStats
 }
 
 // FanIOThresholds configures what counts as "high coupling".
+//gollaw:keep
 type FanIOThresholds struct {
 	MaxFanIn  int
 	MaxFanOut int
 }
 
 // DefaultFanIOThresholds are the thresholds used when none are specified.
+//gollaw:keep
 var DefaultFanIOThresholds = FanIOThresholds{
 	MaxFanIn:  5,
 	MaxFanOut: 10,
 }
 
-// ComputeFanIO computes fan-in/fan-out for every package in the graph.
-func ComputeFanIO(graph *ModuleGraph) []FanIOStats {
-	return ComputeFanIOWithThresholds(graph, DefaultFanIOThresholds)
-}
-
 // ComputeFanIOWithThresholds computes fan-in/fan-out with custom thresholds.
+//gollaw:keep
 func ComputeFanIOWithThresholds(graph *ModuleGraph, t FanIOThresholds) []FanIOStats {
 	if graph == nil {
 		return nil
@@ -53,13 +53,14 @@ func ComputeFanIOWithThresholds(graph *ModuleGraph, t FanIOThresholds) []FanIOSt
 }
 
 // FanIORanking returns the top-10 most imported packages and top-10 importers.
+//gollaw:keep
 func FanIORanking(graph *ModuleGraph) *FanIORankingResult {
 	ranking := &FanIORankingResult{}
 	if graph == nil {
 		return ranking
 	}
 
-	all := ComputeFanIO(graph)
+	all := ComputeFanIOWithThresholds(graph, DefaultFanIOThresholds)
 
 	// Sort by fan-in (most imported first).
 	sortedByIn := make([]FanIOStats, len(all))

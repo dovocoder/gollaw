@@ -24,6 +24,7 @@ const actionVersion = "0.2.0"
 // baseRef is the git ref to compare against (e.g. "origin/main").
 // dir is the working directory (empty = current directory).
 // format is the output format ("markdown" or "json").
+//gollaw:keep
 func RunAction(baseRef, dir string, format string) error {
 	if dir == "" {
 		dir = "."
@@ -105,6 +106,7 @@ func RunAction(baseRef, dir string, format string) error {
 	}
 
 	// Output: try GitHub Actions output file, then PR comment, then stdout.
+	//gollaw:keep
 	if outputPath := os.Getenv("GITHUB_OUTPUT"); outputPath != "" {
 		// Append to GITHUB_OUTPUT file (GitHub Actions step output).
 		f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

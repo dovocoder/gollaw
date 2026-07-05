@@ -3,10 +3,8 @@
 package trace
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/types"
-	"sort"
 	"strings"
 
 	"github.com/dovocoder/gollaw/internal/analyzer"
@@ -25,6 +23,7 @@ type TraceResult struct {
 }
 
 // TraceNode is a single node in a call chain.
+//gollaw:keep
 type TraceNode struct {
 	Function string `json:"function"`
 	Location string `json:"location"` // file:line
@@ -251,11 +250,6 @@ func FormatTraceText(result *TraceResult) string {
 	return b.String()
 }
 
-// FormatTraceJSON produces a JSON trace result.
-func FormatTraceJSON(result *TraceResult) ([]byte, error) {
-	return json.MarshalIndent(result, "", "  ")
-}
-
 // ─── Internal helpers ────────────────────────────────────────────────
 
 // findFunction searches all SSA packages for a function matching the given
@@ -369,14 +363,7 @@ func recvTypeName(t interface{}) string {
 	return ""
 }
 
-// sortedChains sorts chains by their string representation for stable output.
-func sortedChains(chains [][]TraceNode) {
-	sort.Slice(chains, func(i, j int) bool {
-		si := chainKey(chains[i])
-		sj := chainKey(chains[j])
-		return si < sj
-	})
-}
+
 
 func chainKey(chain []TraceNode) string {
 	var b strings.Builder

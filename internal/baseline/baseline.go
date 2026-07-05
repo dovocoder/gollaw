@@ -108,9 +108,4 @@ func Diff(baseline []analyzer.Finding, current []analyzer.Finding) []analyzer.Fi
 	return newFindings
 }
 
-// IsNew checks whether a single finding exists in the baseline.
-// Returns true if the finding is NOT in the baseline (i.e., it's new).
-func IsNew(f analyzer.Finding, baseline []analyzer.Finding) bool {
-	baseSet := buildSet(baseline)
-	return !baseSet[keyOf(f)]
-}
+

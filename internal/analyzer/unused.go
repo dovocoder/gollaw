@@ -16,17 +16,22 @@ func (a *unusedAnalyzer) Name() string        { return "unused" }
 func (a *unusedAnalyzer) Category() Category  { return CategoryUnused }
 func (a *unusedAnalyzer) Description() string { return "Detects exported types, functions, variables, and constants that are never referenced outside their defining package" }
 
+// usage tracks an exported object and which packages reference it.
+type usage struct {
+	obj     types.Object
+	pkgPath string
+	usedBy  map[string]bool // set of pkg paths that use it (other than own)
+}
+
 func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	// Build a usage map: for each exported object, track how many packages
-	// reference it (excluding its own package).
-	type usage struct {
-		obj     types.Object
-		pkgPath string
-		usedBy  map[string]bool // set of pkg paths that use it (other than own)
-	}
+	exportedObjs := a.collectExportedSymbols(ctx)
+	a.checkExternalUsage(ctx, exportedObjs)
+	return a.createUnusedFindings(ctx, exportedObjs), nil
+}
 
+// collectExportedSymbols builds a map of exported objects keyed by pkgPath.name.
+func (a *unusedAnalyzer) collectExportedSymbols(ctx *Context) map[string]*usage {
 	exportedObjs := make(map[string]*usage)
-
 	for pkgPath, typPkg := range ctx.TypesByPkg {
 		scope := typPkg.Scope()
 		for _, name := range scope.Names() {
@@ -46,7 +51,12 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			}
 		}
 	}
+	return exportedObjs
+}
 
+// checkExternalUsage scans all packages for references to exported objects
+// from other packages.
+func (a *unusedAnalyzer) checkExternalUsage(ctx *Context, exportedObjs map[string]*usage) {
 	// Scan all packages for references to exported objects.
 	for pkgPath, typPkg := range ctx.TypesByPkg {
 		// Check imports of this package.
@@ -57,10 +67,9 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			}
 			// This package imports one of our target packages.
 			// Mark all exported objects of the imported package as used.
-			for key, u := range exportedObjs {
+			for _, u := range exportedObjs {
 				if u.pkgPath == importPath {
 					u.usedBy[pkgPath] = true
-					_ = key
 				}
 			}
 		}
@@ -72,7 +81,7 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			continue
 		}
 		usingPkgPath := pkg.PkgPath
-		for ident, obj := range pkg.TypesInfo.Uses {
+		for _, obj := range pkg.TypesInfo.Uses {
 			if obj == nil || !obj.Exported() {
 				continue
 			}
@@ -88,11 +97,12 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			if u, ok := exportedObjs[key]; ok {
 				u.usedBy[usingPkgPath] = true
 			}
-			_ = ident
 		}
 	}
+}
 
-	// Find unused exported objects.
+// createUnusedFindings converts unused exported objects into Finding objects.
+func (a *unusedAnalyzer) createUnusedFindings(ctx *Context, exportedObjs map[string]*usage) []Finding {
 	var findings []Finding
 	var unused []*usage
 	for _, u := range exportedObjs {
@@ -124,8 +134,7 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			Suggestion: "Consider unexporting if this is internal, or document the external API contract. If used via reflection, add //gollaw:keep.",
 		})
 	}
-
-	return findings, nil
+	return findings
 }
 
 func kindOf(obj types.Object) string {

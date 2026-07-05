@@ -11,6 +11,7 @@ import (
 
 // FormatPRSummary renders a sticky PR summary comment in markdown for GitHub PRs.
 // Shows status emoji, health score badge, and at most 10 findings.
+//gollaw:keep
 func FormatPRSummary(report *Report) ([]byte, error) {
 	var buf bytes.Buffer
 

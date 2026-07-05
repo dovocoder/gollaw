@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -19,6 +20,21 @@ func (a *unusedDepsAnalyzer) Category() Category  { return CategoryUnused }
 func (a *unusedDepsAnalyzer) Description() string { return "go.mod dependencies that are never imported" }
 
 func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
+	goModPath, required, err := a.parseGoMod(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if goModPath == "" {
+		return nil, nil
+	}
+
+	imported := a.collectImportedModules(ctx)
+	return a.findUnusedDependencies(goModPath, required, imported), nil
+}
+
+// parseGoMod locates and parses go.mod, returning the file path and a map of
+// module path → version for all required modules.
+func (a *unusedDepsAnalyzer) parseGoMod(ctx *Context) (string, map[string]string, error) {
 	// Find go.mod from the first package's directory.
 	var modDir string
 	for _, pkg := range ctx.Packages {
@@ -30,23 +46,16 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 	if modDir == "" {
-		return nil, nil
+		return "", nil, nil
 	}
 
 	goModPath := filepath.Join(modDir, "go.mod")
 	content, err := os.ReadFile(goModPath)
 	if err != nil {
-		return nil, fmt.Errorf("read go.mod: %w", err)
+		return "", nil, fmt.Errorf("read go.mod: %w", err)
 	}
 
 	// Parse require lines from go.mod.
-	// go.mod format:
-	//   require (
-	//     example.com/foo v1.0.0
-	//     example.com/bar v2.0.0 // indirect
-	//   )
-	// OR:
-	//   require example.com/foo v1.0.0
 	required := make(map[string]string) // module path → version
 	inRequireBlock := false
 	for _, line := range strings.Split(string(content), "\n") {
@@ -55,7 +64,7 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "require ") || strings.HasPrefix(line, "require	") {
+		if strings.HasPrefix(line, "require ") || strings.HasPrefix(line, "require\t") {
 			rest := strings.TrimSpace(strings.TrimPrefix(line, "require"))
 			if strings.HasPrefix(rest, "(") {
 				inRequireBlock = true
@@ -79,7 +88,12 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	// Collect all imported paths from packages.
+	return goModPath, required, nil
+}
+
+// collectImportedModules gathers all imported module paths from both AST
+// imports and package-level imports.
+func (a *unusedDepsAnalyzer) collectImportedModules(ctx *Context) map[string]bool {
 	imported := make(map[string]bool)
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
@@ -103,9 +117,12 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			imported[imp.PkgPath] = true
 		}
 	}
+	return imported
+}
 
-	// Find unused dependencies. An import path matches a module if it
-	// equals the module path OR is a subpackage (modulepath/subpath).
+// findUnusedDependencies compares required modules against imported modules
+// and returns findings for unused direct dependencies.
+func (a *unusedDepsAnalyzer) findUnusedDependencies(goModPath string, required map[string]string, imported map[string]bool) []Finding {
 	isUsed := func(modPath string) bool {
 		if imported[modPath] {
 			return true
@@ -121,7 +138,15 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	}
 
 	var findings []Finding
-	for modPath, version := range required {
+	// Sort module paths for deterministic output.
+	var modPaths []string
+	for modPath := range required {
+		modPaths = append(modPaths, modPath)
+	}
+	sort.Strings(modPaths)
+
+	for _, modPath := range modPaths {
+		version := required[modPath]
 		if !isUsed(modPath) {
 			// Check if it's an indirect dependency — skip indirect deps.
 			if strings.Contains(version, "// indirect") {
@@ -139,8 +164,7 @@ func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			})
 		}
 	}
-
-	return findings, nil
+	return findings
 }
 
 func parseRequireLine(line string, required map[string]string) {

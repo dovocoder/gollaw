@@ -15,6 +15,7 @@ import (
 )
 
 // VitalSigns is a project-wide metrics snapshot.
+//gollaw:keep
 type VitalSigns struct {
 	// Counts
 	TotalFiles    int `json:"totalFiles"`

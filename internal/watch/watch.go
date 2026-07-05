@@ -86,7 +86,21 @@ func Watch(dir string, patterns []string, onChange func()) error {
 func watchPoll(dir string, patterns []string, onChange func()) error {
 	modTimes := make(map[string]int64)
 	// Initial scan.
-	scanFiles(dir, modTimes)
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if shouldSkipDir(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") {
+			modTimes[path] = info.ModTime().UnixNano()
+		}
+		return nil
+	})
 
 	var timer *time.Timer
 	var mu sync.Mutex
@@ -96,7 +110,21 @@ func watchPoll(dir string, patterns []string, onChange func()) error {
 
 	for range ticker.C {
 		current := make(map[string]int64)
-		scanFiles(dir, current)
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				if shouldSkipDir(path) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.HasSuffix(path, ".go") {
+				current[path] = info.ModTime().UnixNano()
+			}
+			return nil
+		})
 
 		changed := false
 		// Check for new or modified files.
@@ -136,25 +164,7 @@ func watchPoll(dir string, patterns []string, onChange func()) error {
 	return nil
 }
 
-// scanFiles walks the directory and records modification times for .go files.
-func scanFiles(dir string, modTimes map[string]int64) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			if shouldSkipDir(path) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(path, ".go") {
-			modTimes[path] = info.ModTime().UnixNano()
-		}
-		return nil
-	})
-}
-
+//gollaw:keep
 // shouldSkipDir returns true for directories that should not be watched.
 func shouldSkipDir(path string) bool {
 	base := filepath.Base(path)

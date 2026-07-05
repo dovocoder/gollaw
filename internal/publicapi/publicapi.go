@@ -12,6 +12,7 @@ import (
 )
 
 // ExportInfo describes a single exported identifier.
+//gollaw:keep
 type ExportInfo struct {
 	Name   string   `json:"name"`
 	Kind   string   `json:"kind"` // function, type, const, var
@@ -22,6 +23,7 @@ type ExportInfo struct {
 }
 
 // APIReport summarises the public API surface of the codebase.
+//gollaw:keep
 type APIReport struct {
 	TotalExports      int          `json:"totalExports"`
 	ConfirmedPublic   []ExportInfo `json:"confirmedPublic"`
@@ -95,9 +97,24 @@ func AnalyzePublicAPI(ctx *analyzer.Context) (*APIReport, error) {
 		}
 	}
 
-	sortExports(report.ConfirmedPublic)
-	sortExports(report.AccidentalExports)
-	sortExports(report.UnusedExports)
+	sort.Slice(report.ConfirmedPublic, func(i, j int) bool {
+		if report.ConfirmedPublic[i].Package != report.ConfirmedPublic[j].Package {
+			return report.ConfirmedPublic[i].Package < report.ConfirmedPublic[j].Package
+		}
+		return report.ConfirmedPublic[i].Name < report.ConfirmedPublic[j].Name
+	})
+	sort.Slice(report.AccidentalExports, func(i, j int) bool {
+		if report.AccidentalExports[i].Package != report.AccidentalExports[j].Package {
+			return report.AccidentalExports[i].Package < report.AccidentalExports[j].Package
+		}
+		return report.AccidentalExports[i].Name < report.AccidentalExports[j].Name
+	})
+	sort.Slice(report.UnusedExports, func(i, j int) bool {
+		if report.UnusedExports[i].Package != report.UnusedExports[j].Package {
+			return report.UnusedExports[i].Package < report.UnusedExports[j].Package
+		}
+		return report.UnusedExports[i].Name < report.UnusedExports[j].Name
+	})
 
 	return report, nil
 }
@@ -131,8 +148,11 @@ func scanUses(pkgs []*packages.Package, entries map[string]*exportEntry) {
 }
 
 type exportEntry struct {
+	//gollaw:keep
 	obj     types.Object
+	//gollaw:keep
 	pkgPath string
+	//gollaw:keep
 	usedBy  map[string]bool
 }
 
@@ -250,13 +270,4 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func sortExports(s []ExportInfo) {
-	sort.Slice(s, func(i, j int) bool {
-		if s[i].Package != s[j].Package {
-			return s[i].Package < s[j].Package
-		}
-		return s[i].Name < s[j].Name
-	})
 }

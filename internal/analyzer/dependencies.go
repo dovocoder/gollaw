@@ -14,7 +14,7 @@ type dependencyAnalyzer struct{}
 func newDependencyAnalyzer() *dependencyAnalyzer { return &dependencyAnalyzer{} }
 
 func (a *dependencyAnalyzer) Name() string        { return "dependencies" }
-func (a *dependencyAnalyzer) Category() Category  { return CategoryDependencies }
+func (a *dependencyAnalyzer) Category() Category  { return categoryDependencies }
 func (a *dependencyAnalyzer) Description() string { return "Import graph cycles and dependency hygiene" }
 
 func (a *dependencyAnalyzer) Analyze(ctx *Context) ([]Finding, error) {

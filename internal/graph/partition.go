@@ -8,6 +8,7 @@ import "sort"
 //
 // This is useful for build ordering, understanding dependency depth, and
 // identifying circular dependency violations.
+//gollaw:keep
 func PartitionOrder(graph *ModuleGraph) [][]string {
 	if graph == nil || len(graph.Nodes) == 0 {
 		return nil
@@ -84,6 +85,7 @@ func PartitionOrder(graph *ModuleGraph) [][]string {
 
 // DetectCircularDeps finds all cycles in the graph using DFS.
 // Each returned slice is one cycle represented as a list of package paths.
+//gollaw:keep
 func DetectCircularDeps(graph *ModuleGraph) [][]string {
 	if graph == nil || len(graph.Nodes) == 0 {
 		return nil

@@ -11,18 +11,22 @@ import (
 
 // Suppressions holds all parsed suppression directives from source comments.
 type Suppressions struct {
+	//gollaw:keep
 	// fileIgnoreAll maps file paths that have a //gollaw:ignore-all comment.
 	fileIgnoreAll map[string]bool
 
+	//gollaw:keep
 	// declIgores maps file → line → analyzer name → true.
 	// The line is the line of the declaration the suppression applies to.
 	declIgnores map[string]map[int]map[string]bool
 
+	//gollaw:keep
 	// entries records every suppression comment found, for staleness checking.
 	entries []SuppressionEntry
 }
 
 // SuppressionEntry records a single suppression comment and its metadata.
+//gollaw:keep
 type SuppressionEntry struct {
 	File     string
 	Line     int // line of the comment
@@ -33,6 +37,7 @@ type SuppressionEntry struct {
 }
 
 // StaleSuppression represents a suppression that no longer matches any finding.
+//gollaw:keep
 type StaleSuppression struct {
 	File     string
 	Line     int
@@ -211,6 +216,7 @@ func (s *Suppressions) addDeclIgnore(fileName string, declLine int, analyzerName
 }
 
 // IsSuppressed checks whether a finding is suppressed by any directive.
+//gollaw:keep
 func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 	if sup == nil {
 		return false
@@ -226,11 +232,11 @@ func IsSuppressed(f analyzer.Finding, sup *Suppressions) bool {
 	if fileMap, ok := sup.declIgnores[f.File]; ok {
 		for declLine, analyzers := range fileMap {
 			if matchesDecl(f.Line, declLine) {
-				if analyzers[f.Analyzer] {
+				// "keep" suppresses ALL analyzers for this declaration
+				if analyzers["deadcode"] {
 					return true
 				}
-				// "keep" suppresses deadcode and unused
-				if analyzers["deadcode"] && (f.Analyzer == "deadcode" || f.Analyzer == "unused") {
+				if analyzers[f.Analyzer] {
 					return true
 				}
 			}

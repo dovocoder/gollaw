@@ -2,7 +2,6 @@
 package fix
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 )
 
 // FixReport summarises a fix run.
+//gollaw:keep
 type FixReport struct {
 	Analyzer   string      `json:"analyzer"`
 	TotalFixes int         `json:"totalFixes"`
@@ -22,6 +22,7 @@ type FixReport struct {
 }
 
 // FixChange represents a single suggested or applied fix.
+//gollaw:keep
 type FixChange struct {
 	File        string `json:"file"`
 	Line        int    `json:"line"`
@@ -312,11 +313,6 @@ func FormatFixText(report *FixReport) string {
 	}
 
 	return b.String()
-}
-
-// FormatFixJSON renders a fix report as JSON.
-func FormatFixJSON(report *FixReport) ([]byte, error) {
-	return json.MarshalIndent(report, "", "  ")
 }
 
 func truncate(s string, maxLen int) string {

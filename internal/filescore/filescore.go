@@ -2,7 +2,6 @@
 package filescore
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +10,7 @@ import (
 )
 
 // FileStats holds per-file statistics.
+//gollaw:keep
 type FileStats struct {
 	LineCount  int
 	FuncCount  int
@@ -18,6 +18,7 @@ type FileStats struct {
 }
 
 // FileStatsMap maps file paths to their stats.
+//gollaw:keep
 type FileStatsMap map[string]FileStats
 
 // FileHealthScore is the health score for a single file.
@@ -129,11 +130,6 @@ func FormatFileScoresText(scores []FileHealthScore) string {
 		fmt.Fprintf(&b, "%-60s %4d  %s     %4d\n", shortPath(s.File), s.Score, s.Grade, s.FindingCount)
 	}
 	return b.String()
-}
-
-// FormatFileScoresJSON formats file scores as JSON.
-func FormatFileScoresJSON(scores []FileHealthScore) ([]byte, error) {
-	return json.MarshalIndent(scores, "", "  ")
 }
 
 func shortPath(path string) string {

@@ -3,7 +3,6 @@ package analyzer
 import (
 	"go/ast"
 	"go/token"
-	"go/types"
 )
 
 // Severity describes how impactful a finding is.
@@ -24,7 +23,7 @@ const (
 	CategoryUnused        Category = "unused"
 	CategoryComplexity    Category = "complexity"
 	CategoryDuplication   Category = "duplication"
-	CategoryDependencies  Category = "dependencies"
+	categoryDependencies  Category = "dependencies"
 	CategoryArchitecture  Category = "architecture"
 	CategoryCodeSmell     Category = "code-smell"
 )
@@ -44,16 +43,16 @@ type Finding struct {
 	RuleID     string   `json:"ruleId"`
 }
 
-// Position holds a source position.
-type Position struct {
+// position holds a source position.
+type position struct {
 	Filename string
 	Offset   int
 	Line     int
 	Column   int
 }
 
-// NodeInfo extracts position info from an ast.Node.
-func NodeInfo(fset *token.FileSet, node ast.Node) (file string, line, endLine int) {
+// nodeInfo extracts position info from an ast.Node.
+func nodeInfo(fset *token.FileSet, node ast.Node) (file string, line, endLine int) {
 	start := fset.Position(node.Pos())
 	end := fset.Position(node.End())
 	file = start.Filename
@@ -62,8 +61,4 @@ func NodeInfo(fset *token.FileSet, node ast.Node) (file string, line, endLine in
 	return
 }
 
-// ObjectInfo extracts position info from a types.Object.
-func ObjectInfo(fset *token.FileSet, obj types.Object) (file string, line int) {
-	pos := fset.Position(obj.Pos())
-	return pos.Filename, pos.Line
-}
+

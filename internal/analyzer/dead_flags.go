@@ -17,7 +17,16 @@ func (a *deadFlagsAnalyzer) Description() string  { return "Finds unused constan
 
 func (a *deadFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	var findings []Finding
+	findings = append(findings, a.checkUnusedConstants(ctx)...)
+	findings = append(findings, a.checkUnreadFlags(ctx)...)
+	return findings, nil
+}
 
+// checkUnusedConstants finds exported constants that are never referenced.
+func (a *deadFlagsAnalyzer) checkUnusedConstants(ctx *Context) []Finding {
+	var findings []Finding
+
+	// Build constant usage map.
 	constUsage := make(map[string]bool)
 	for _, pkg := range ctx.Packages {
 		if pkg.TypesInfo == nil {
@@ -34,6 +43,7 @@ func (a *deadFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
+	// Check exported constants for usage.
 	for pkgPath, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
@@ -70,6 +80,13 @@ func (a *deadFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			}
 		}
 	}
+
+	return findings
+}
+
+// checkUnreadFlags finds flag registrations that may never be read.
+func (a *deadFlagsAnalyzer) checkUnreadFlags(ctx *Context) []Finding {
+	var findings []Finding
 
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
@@ -114,5 +131,5 @@ func (a *deadFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	return findings, nil
+	return findings
 }

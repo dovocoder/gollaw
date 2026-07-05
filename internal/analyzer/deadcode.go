@@ -25,7 +25,15 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		return nil, fmt.Errorf("SSA program not available")
 	}
 
-	// Collect all functions in the target packages (not dependencies).
+	allFns := a.collectAllFunctions(ctx.SSAByPkg)
+	reachable := a.buildReachableSet(ctx, allFns)
+	deadFns := a.findDeadFunctions(allFns, reachable)
+	return a.createFindings(ctx, deadFns), nil
+}
+
+// collectAllFunctions gathers all non-test, non-init, non-main functions
+// from the target packages (not dependencies).
+func (a *deadCodeAnalyzer) collectAllFunctions(ssaByPkg map[string]*ssa.Package) map[string]*ssa.Function {
 	allFns := make(map[string]*ssa.Function)
 	collect := func(fn *ssa.Function) {
 		if fn == nil || fn.Name() == "" || fn.Syntax() == nil {
@@ -40,7 +48,7 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		allFns[fn.String()] = fn
 	}
 
-	for _, ssaPkg := range ctx.SSAByPkg {
+	for _, ssaPkg := range ssaByPkg {
 		if ssaPkg == nil {
 			continue
 		}
@@ -71,8 +79,12 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			}
 		}
 	}
+	return allFns
+}
 
-	// Build reachability set using the static call graph + manual SSA traversal.
+// buildReachableSet performs a BFS from entry points through the call graph
+// and SSA instructions to determine which functions are reachable.
+func (a *deadCodeAnalyzer) buildReachableSet(ctx *Context, allFns map[string]*ssa.Function) map[string]bool {
 	cg := static.CallGraph(ctx.SSA)
 	reachable := make(map[string]bool)
 	var queue []*ssa.Function
@@ -155,20 +167,27 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			}
 		}
 	}
+	return reachable
+}
 
-	// Find dead functions.
-	var findings []Finding
+// findDeadFunctions returns functions in allFns that are not in reachable,
+// sorted by position.
+func (a *deadCodeAnalyzer) findDeadFunctions(allFns map[string]*ssa.Function, reachable map[string]bool) []*ssa.Function {
 	var deadFns []*ssa.Function
 	for key, fn := range allFns {
 		if !reachable[key] {
 			deadFns = append(deadFns, fn)
 		}
 	}
-
 	sort.Slice(deadFns, func(i, j int) bool {
 		return deadFns[i].Pos() < deadFns[j].Pos()
 	})
+	return deadFns
+}
 
+// createFindings converts dead functions into Finding objects.
+func (a *deadCodeAnalyzer) createFindings(ctx *Context, deadFns []*ssa.Function) []Finding {
+	var findings []Finding
 	for _, fn := range deadFns {
 		pos := ctx.FSET.Position(fn.Pos())
 		findings = append(findings, Finding{
@@ -183,8 +202,7 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			Suggestion: "Remove this function or add a caller. If it is used via reflection or interface dispatch, add a //gollaw:keep comment.",
 		})
 	}
-
-	return findings, nil
+	return findings
 }
 
 func isExportedSSA(fn *ssa.Function) bool {
@@ -215,6 +233,7 @@ func recvTypeName(t interface{}) string {
 	return ""
 }
 
+//gollaw:keep
 func isTestFunction(fn *ssa.Function) bool {
 	name := fn.Name()
 	return len(name) > 4 && (name[:4] == "Test" || name[:4] == "Bench" || name[:4] == "Fuzz" || name == "TestMain")

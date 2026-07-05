@@ -26,55 +26,9 @@ func (a *namingAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
-			// Check function names.
-			for _, decl := range file.Decls {
-				switch d := decl.(type) {
-				case *ast.FuncDecl:
-					name := d.Name.Name
-					pos := ctx.FSET.Position(d.Name.Pos())
-					findings = append(findings, checkName("function", name, pos, d.Name.IsExported())...)
-				case *ast.GenDecl:
-					for _, spec := range d.Specs {
-						switch s := spec.(type) {
-						case *ast.TypeSpec:
-							pos := ctx.FSET.Position(s.Name.Pos())
-							findings = append(findings, checkName("type", s.Name.Name, pos, s.Name.IsExported())...)
-						case *ast.ValueSpec:
-							for _, name := range s.Names {
-								pos := ctx.FSET.Position(name.Pos())
-								kind := "variable"
-								if d.Tok.String() == "const" {
-									kind = "constant"
-								}
-								findings = append(findings, checkName(kind, name.Name, pos, name.IsExported())...)
-							}
-						}
-					}
-				}
-			}
-
-			// Check import aliases for unnecessary aliases.
-			for _, imp := range file.Imports {
-				if imp.Name == nil {
-					continue
-				}
-				alias := imp.Name.Name
-				path := strings.Trim(imp.Path.Value, `"`)
-				pkgName := lastSegment(path)
-				if alias == pkgName {
-					pos := ctx.FSET.Position(imp.Pos())
-					findings = append(findings, Finding{
-						Analyzer:  a.Name(),
-						Category:  a.Category(),
-						Severity:  SeverityHint,
-						Message:    fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
-						File:       pos.Filename,
-						Line:       pos.Line,
-						RuleID:     "GLW-NM003",
-						Suggestion: "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
-					})
-				}
-			}
+			findings = append(findings, a.checkFunctionNames(ctx, file)...)
+			findings = append(findings, a.checkTypeNames(ctx, file)...)
+			findings = append(findings, a.checkVariableNames(ctx, file)...)
 		}
 	}
 
@@ -86,6 +40,92 @@ func (a *namingAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	})
 
 	return findings, nil
+}
+
+// checkFunctionNames checks function declarations for naming convention violations.
+func (a *namingAnalyzer) checkFunctionNames(ctx *Context, file *ast.File) []Finding {
+	var findings []Finding
+	for _, decl := range file.Decls {
+		d, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		name := d.Name.Name
+		pos := ctx.FSET.Position(d.Name.Pos())
+		findings = append(findings, checkName("function", name, pos, d.Name.IsExported())...)
+	}
+	return findings
+}
+
+// checkTypeNames checks type declarations for naming convention violations.
+func (a *namingAnalyzer) checkTypeNames(ctx *Context, file *ast.File) []Finding {
+	var findings []Finding
+	for _, decl := range file.Decls {
+		d, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range d.Specs {
+			if s, ok := spec.(*ast.TypeSpec); ok {
+				pos := ctx.FSET.Position(s.Name.Pos())
+				findings = append(findings, checkName("type", s.Name.Name, pos, s.Name.IsExported())...)
+			}
+		}
+	}
+	return findings
+}
+
+// checkVariableNames checks variable and constant declarations, and import
+// aliases, for naming convention violations.
+func (a *namingAnalyzer) checkVariableNames(ctx *Context, file *ast.File) []Finding {
+	var findings []Finding
+
+	// Check variable and constant names.
+	for _, decl := range file.Decls {
+		d, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range d.Specs {
+			s, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, name := range s.Names {
+				pos := ctx.FSET.Position(name.Pos())
+				kind := "variable"
+				if d.Tok.String() == "const" {
+					kind = "constant"
+				}
+				findings = append(findings, checkName(kind, name.Name, pos, name.IsExported())...)
+			}
+		}
+	}
+
+	// Check import aliases for unnecessary aliases.
+	for _, imp := range file.Imports {
+		if imp.Name == nil {
+			continue
+		}
+		alias := imp.Name.Name
+		path := strings.Trim(imp.Path.Value, `"`)
+		pkgName := lastSegment(path)
+		if alias == pkgName {
+			pos := ctx.FSET.Position(imp.Pos())
+			findings = append(findings, Finding{
+				Analyzer:  a.Name(),
+				Category:  a.Category(),
+				Severity:  SeverityHint,
+				Message:    fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
+				File:       pos.Filename,
+				Line:       pos.Line,
+				RuleID:     "GLW-NM003",
+				Suggestion: "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
+			})
+		}
+	}
+
+	return findings
 }
 
 func checkName(kind, name string, pos token.Position, exported bool) []Finding {

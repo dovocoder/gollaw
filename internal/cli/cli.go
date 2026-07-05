@@ -37,12 +37,13 @@ import (
 	"github.com/dovocoder/gollaw/internal/xref"
 )
 
+//gollaw:keep
 const Version = "0.2.0"
 
 // Run is the main CLI entry point.
 func Run(args []string) int {
 	if len(args) < 1 {
-		printUsage()
+		fmt.Println(usageText)
 		return 1
 	}
 
@@ -107,186 +108,143 @@ func Run(args []string) int {
 	case "timings":
 		return runTimings(args[1:])
 	case "help", "-h", "--help":
-		printUsage()
+		fmt.Println(usageText)
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", args[0])
-		printUsage()
+		fmt.Println(usageText)
 		return 1
 	}
 }
 
 // ─── shared helpers ───
 
-func loadAndAnalyze(args []string) (*reporter.Report, *analyzer.Context, *loader.Result, int) {
-	var (
-		patterns     []string
-		format       = "text"
-		analyzerList string
-		rules        []string
-		minSeverity  = "hint"
-		maxCyc       = 0
-		maxCog       = 0
-		minDup       = 0
-		dir          = ""
-		useConfig    = true
-		useBaseline  = false
-		useSuppress  = true
-	)
+type analyzeOpts struct {
+	patterns     []string
+	format       string
+	analyzerList  string
+	rules         []string
+	minSeverity  string
+	maxCyc       int
+	maxCog       int
+	minDup       int
+	dir          string
+	useConfig    bool
+	useBaseline  bool
+	useSuppress  bool
+}
 
+func parseAnalyzeFlags(args []string) (analyzeOpts, int) {
+	o := analyzeOpts{
+		format:      "text",
+		minSeverity: "hint",
+		useConfig:   true,
+		useSuppress: true,
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--format" || arg == "-f":
 			i++
-			if i < len(args) {
-				format = args[i]
-			}
+			if i < len(args) { o.format = args[i] }
 		case strings.HasPrefix(arg, "--format="):
-			format = strings.TrimPrefix(arg, "--format=")
+			o.format = strings.TrimPrefix(arg, "--format=")
 		case arg == "--analyzers" || arg == "-a":
 			i++
-			if i < len(args) {
-				analyzerList = args[i]
-			}
+			if i < len(args) { o.analyzerList = args[i] }
 		case strings.HasPrefix(arg, "--analyzers="):
-			analyzerList = strings.TrimPrefix(arg, "--analyzers=")
+			o.analyzerList = strings.TrimPrefix(arg, "--analyzers=")
 		case arg == "--rule":
 			i++
-			if i < len(args) {
-				rules = append(rules, args[i])
-			}
+			if i < len(args) { o.rules = append(o.rules, args[i]) }
 		case strings.HasPrefix(arg, "--rule="):
-			rules = append(rules, strings.TrimPrefix(arg, "--rule="))
+			o.rules = append(o.rules, strings.TrimPrefix(arg, "--rule="))
 		case arg == "--min-severity":
 			i++
-			if i < len(args) {
-				minSeverity = args[i]
-			}
+			if i < len(args) { o.minSeverity = args[i] }
 		case strings.HasPrefix(arg, "--min-severity="):
-			minSeverity = strings.TrimPrefix(arg, "--min-severity=")
+			o.minSeverity = strings.TrimPrefix(arg, "--min-severity=")
 		case arg == "--max-cyclomatic":
 			i++
-			if i < len(args) {
-				fmt.Sscanf(args[i], "%d", &maxCyc)
-			}
+			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.maxCyc) }
 		case arg == "--max-cognitive":
 			i++
-			if i < len(args) {
-				fmt.Sscanf(args[i], "%d", &maxCog)
-			}
+			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.maxCog) }
 		case arg == "--min-dup-lines":
 			i++
-			if i < len(args) {
-				fmt.Sscanf(args[i], "%d", &minDup)
-			}
+			if i < len(args) { fmt.Sscanf(args[i], "%d", &o.minDup) }
 		case arg == "--dir":
 			i++
-			if i < len(args) {
-				dir = args[i]
-			}
+			if i < len(args) { o.dir = args[i] }
 		case strings.HasPrefix(arg, "--dir="):
-			dir = strings.TrimPrefix(arg, "--dir=")
+			o.dir = strings.TrimPrefix(arg, "--dir=")
 		case arg == "--no-config":
-			useConfig = false
+			o.useConfig = false
 		case arg == "--baseline":
-			useBaseline = true
+			o.useBaseline = true
 		case arg == "--no-suppress":
-			useSuppress = false
+			o.useSuppress = false
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr, "unknown flag: %s\n", arg)
-			return nil, nil, nil, 1
+			return o, 1
 		default:
-			patterns = append(patterns, arg)
+			o.patterns = append(o.patterns, arg)
 		}
 	}
-
-	if len(patterns) == 0 {
-		patterns = []string{"./..."}
+	if len(o.patterns) == 0 {
+		o.patterns = []string{"./..."}
 	}
+	return o, 0
+}
 
-	// Load config file if available.
-	var fileCfg *config.Config
-	if useConfig {
-		configPath := config.FindConfig(dir)
-		if configPath != "" {
-			fc, err := config.Load(configPath)
-			if err == nil {
-				fileCfg = fc
-			}
-		}
-	}
-
+func buildAnalyzerConfig(o analyzeOpts) (analyzer.Config, int) {
 	var analyzerNames []string
-	if analyzerList != "" {
-		analyzerNames = strings.Split(analyzerList, ",")
+	if o.analyzerList != "" {
+		analyzerNames = strings.Split(o.analyzerList, ",")
 	}
-
 	var archRules []analyzer.Rule
-	for _, r := range rules {
+	for _, r := range o.rules {
 		parts := strings.SplitN(r, " must not import ", 2)
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "invalid rule format: %s\n", r)
-			return nil, nil, nil, 1
+			return analyzer.Config{}, 1
 		}
 		archRules = append(archRules, analyzer.Rule{
 			Package:    strings.TrimSpace(parts[0]),
 			MustNotUse: strings.TrimSpace(parts[1]),
 		})
 	}
-
-	sev, err := parseSeverity(minSeverity)
+	sev, err := parseSeverity(o.minSeverity)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return nil, nil, nil, 1
+		return analyzer.Config{}, 1
 	}
-
 	aCfg := analyzer.Config{
 		Analyzers:     analyzerNames,
 		Rules:         archRules,
 		MinSeverity:   sev,
-		MaxCyclomatic: maxCyc,
-		MaxCognitive:  maxCog,
-		MinDupLines:   minDup,
+		MaxCyclomatic: o.maxCyc,
+		MaxCognitive:  o.maxCog,
+		MinDupLines:   o.minDup,
 	}
-
-	// Merge with file config (CLI wins).
-	if fileCfg != nil {
-		aCfg = config.Merge(aCfg, *fileCfg)
+	if o.useConfig {
+		configPath := config.FindConfig(o.dir)
+		if configPath != "" {
+			if fc, err := config.Load(configPath); err == nil {
+				aCfg = config.Merge(aCfg, *fc)
+			}
+		}
 	}
+	return aCfg, 0
+}
 
-	// Load codebase.
-	result, err := loader.Load(loader.LoadConfig{
-		Patterns: patterns,
-		Dir:      dir,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load codebase: %v\n", err)
-		return nil, nil, nil, 1
-	}
-
-	for _, e := range result.LoadErrors {
-		fmt.Fprintf(os.Stderr, "load warning: %v\n", e)
-	}
-
-	ctx := &analyzer.Context{
-		FSET:        result.FSET,
-		Packages:    result.Packages,
-		SSA:         result.SSA,
-		SSAByPkg:    result.SSAByPkg,
-		TypesByPkg:  result.TypesByPkg,
-		SyntaxByPkg: result.SyntaxByPkg,
-		Config:      aCfg,
-	}
-
-	// Run analyzers.
+func runAnalyzers(ctx *analyzer.Context, aCfg analyzer.Config, useSuppress bool, useBaseline bool, dir string) ([]analyzer.Finding, []string) {
 	registry := analyzer.NewRegistry()
 	selected := registry.Select(aCfg.Analyzers)
 	if len(selected) == 0 && len(aCfg.Analyzers) > 0 {
 		fmt.Fprintf(os.Stderr, "no matching analyzers. Available: %s\n", strings.Join(registry.Names(), ", "))
-		return nil, nil, nil, 1
+		return nil, nil
 	}
-
 	var allFindings []analyzer.Finding
 	ranNames := make([]string, 0, len(selected))
 	for _, a := range selected {
@@ -298,26 +256,52 @@ func loadAndAnalyze(args []string) (*reporter.Report, *analyzer.Context, *loader
 		}
 		allFindings = append(allFindings, findings...)
 	}
-
-	// Apply suppressions.
 	if useSuppress {
 		sup := parseAllSuppressions(ctx)
 		if sup != nil {
 			allFindings = suppress.FilterSuppressed(allFindings, sup)
 		}
 	}
-
-	// Filter by min severity.
-	allFindings = filterBySeverity(allFindings, sev)
-
-	// Apply baseline diff if requested.
+	allFindings = filterBySeverity(allFindings, aCfg.MinSeverity)
 	if useBaseline {
 		bl, err := baseline.Load(dir)
 		if err == nil && len(bl) > 0 {
 			allFindings = baseline.Diff(bl, allFindings)
 		}
 	}
+	return allFindings, ranNames
+}
 
+func loadAndAnalyze(args []string) (*reporter.Report, *analyzer.Context, *loader.Result, int) {
+	o, code := parseAnalyzeFlags(args)
+	if code != 0 {
+		return nil, nil, nil, code
+	}
+	aCfg, code := buildAnalyzerConfig(o)
+	if code != 0 {
+		return nil, nil, nil, code
+	}
+	result, err := loader.Load(loader.LoadConfig{
+		Patterns: o.patterns,
+		Dir:      o.dir,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load codebase: %v\n", err)
+		return nil, nil, nil, 1
+	}
+	for _, e := range result.LoadErrors {
+		fmt.Fprintf(os.Stderr, "load warning: %v\n", e)
+	}
+	ctx := &analyzer.Context{
+		FSET:        result.FSET,
+		Packages:    result.Packages,
+		SSA:         result.SSA,
+		SSAByPkg:    result.SSAByPkg,
+		TypesByPkg:  result.TypesByPkg,
+		SyntaxByPkg: result.SyntaxByPkg,
+		Config:      aCfg,
+	}
+	allFindings, ranNames := runAnalyzers(ctx, aCfg, o.useSuppress, o.useBaseline, o.dir)
 	stats := reporter.CodebaseStats{
 		Packages:  result.Stats.PackageCount,
 		Files:     result.Stats.FileCount,
@@ -325,11 +309,8 @@ func loadAndAnalyze(args []string) (*reporter.Report, *analyzer.Context, *loader
 		Types:     result.Stats.TypeCount,
 		Decls:     result.Stats.DeclCount,
 	}
-
-	rep := reporter.BuildReport(Version, patterns, ranNames, stats, allFindings)
-
-	// Store format in a way we can access — hack: return via report
-	_ = format
+	rep := reporter.BuildReport(Version, o.patterns, ranNames, stats, allFindings)
+	_ = o.format
 	return rep, ctx, result, 0
 }
 
@@ -424,7 +405,7 @@ func runAudit(args []string) int {
 
 	switch format {
 	case "json":
-		data, _ := audit.FormatAuditJSON(auditRep)
+		data, _ := json.MarshalIndent(auditRep, "", "  ")
 		fmt.Println(string(data))
 	case "markdown":
 		fmt.Println(action.FormatPRComment(auditRep))
@@ -604,7 +585,7 @@ func runExplain(args []string) int {
 
 	switch format {
 	case "json":
-		data, _ := explain.FormatExplanationJSON(exp)
+		data, _ := json.MarshalIndent(exp, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(explain.FormatExplanation(exp))
@@ -685,7 +666,7 @@ func runTrace(args []string) int {
 
 	switch format {
 	case "json":
-		data, _ := trace.FormatTraceJSON(tr)
+		data, _ := json.MarshalIndent(tr, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(trace.FormatTraceText(tr))
@@ -826,7 +807,7 @@ func runFileScores(args []string) int {
 	scores := filescore.ScoreFiles(rep.Findings, nil)
 	switch format {
 	case "json":
-		data, _ := filescore.FormatFileScoresJSON(scores)
+		data, _ := json.MarshalIndent(scores, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(filescore.FormatFileScoresText(scores))
@@ -862,7 +843,7 @@ func runXRef(args []string) int {
 	combined := xref.CrossReference(rep.Findings)
 	switch format {
 	case "json":
-		data, _ := xref.FormatXRefJSON(combined)
+		data, _ := json.MarshalIndent(combined, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(xref.FormatXRefText(combined))
@@ -1132,8 +1113,7 @@ func runList() int {
 
 // ─── usage ───
 
-func printUsage() {
-	fmt.Println(`Gollaw — whole-codebase intelligence for Go
+const usageText = `Gollaw — whole-codebase intelligence for Go
 
 Usage:
   gollaw <command> [flags] [args]
@@ -1182,8 +1162,7 @@ Examples:
   gollaw coverage
   gollaw public-api
   gollaw lsp  # for editor integration
-  gollaw mcp  # for AI agent integration`)
-}
+  gollaw mcp  # for AI agent integration`
 
 func parseSeverity(s string) (analyzer.Severity, error) {
 	switch strings.ToLower(s) {
@@ -1239,7 +1218,7 @@ func runFix(args []string) int {
 
 	switch format {
 	case "json":
-		data, _ := fix.FormatFixJSON(report)
+		data, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(fix.FormatFixText(report))
@@ -1374,7 +1353,7 @@ func runRegression(args []string) int {
 
 	switch format {
 	case "json":
-		data, _ := regression.FormatRegressionJSON(result)
+		data, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(regression.FormatRegressionText(result))
@@ -1416,7 +1395,7 @@ func runWalkthrough(args []string) int {
 	wt := walkthrough.GenerateWalkthrough(rep.Findings, rep.Stats)
 	switch format {
 	case "json":
-		data, _ := walkthrough.FormatWalkthroughJSON(wt)
+		data, _ := json.MarshalIndent(wt, "", "  ")
 		fmt.Println(string(data))
 	default:
 		fmt.Print(walkthrough.FormatWalkthroughText(wt))
@@ -1428,14 +1407,14 @@ func runWalkthrough(args []string) int {
 
 func runRulePack(args []string) int {
 	if len(args) < 1 {
-		packs := rulepack.ListPacks()
+		packs := rulepack.BuiltInPacks()
 		fmt.Print(rulepack.FormatPacksText(packs))
 		return 0
 	}
 
 	switch args[0] {
 	case "list":
-		packs := rulepack.ListPacks()
+		packs := rulepack.BuiltInPacks()
 		fmt.Print(rulepack.FormatPacksText(packs))
 		return 0
 	case "apply":

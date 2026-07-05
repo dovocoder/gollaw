@@ -4,7 +4,6 @@
 package audit
 
 import (
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 )
 
 // AuditReport is the complete PR audit result.
+//gollaw:keep
 type AuditReport struct {
 	BaseRef      string        `json:"baseRef"`
 	ChangedFiles []string     `json:"changedFiles"`
@@ -24,6 +24,7 @@ type AuditReport struct {
 }
 
 // AuditFinding wraps an analyzer.Finding with PR attribution.
+//gollaw:keep
 type AuditFinding struct {
 	analyzer.Finding
 	Status      string `json:"status"`       // "introduced" or "pre-existing"
@@ -31,6 +32,7 @@ type AuditFinding struct {
 }
 
 // AuditSummary breaks down audit findings.
+//gollaw:keep
 type AuditSummary struct {
 	Introduced int            `json:"introduced"`
 	PreExisting int           `json:"preExisting"`
@@ -181,11 +183,6 @@ func FormatAuditText(report *AuditReport) string {
 	}
 
 	return b.String()
-}
-
-// FormatAuditJSON formats the audit report as JSON.
-func FormatAuditJSON(report *AuditReport) ([]byte, error) {
-	return json.MarshalIndent(report, "", "  ")
 }
 
 func verdictIcon(v string) string {

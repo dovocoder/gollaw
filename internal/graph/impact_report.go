@@ -9,6 +9,7 @@ import (
 )
 
 // ImpactReport is a comprehensive impact analysis for a set of changed files.
+//gollaw:keep
 type ImpactReport struct {
 	ChangedPackages   []string
 	AffectedPackages  []string
@@ -62,7 +63,7 @@ func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport 
 	report.TotalBlastRadius = len(report.ChangedPackages) + len(report.AffectedPackages)
 
 	// Fan-in/fan-out for changed packages.
-	allFanIO := ComputeFanIO(graph)
+	allFanIO := ComputeFanIOWithThresholds(graph, DefaultFanIOThresholds)
 	for _, s := range allFanIO {
 		if changedPkgs[s.Package] {
 			report.FanIOForChanged = append(report.FanIOForChanged, s)

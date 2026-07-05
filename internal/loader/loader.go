@@ -35,6 +35,7 @@ type Result struct {
 }
 
 // LoadStats summarizes the loaded codebase.
+//gollaw:keep
 type LoadStats struct {
 	PackageCount   int
 	FileCount      int

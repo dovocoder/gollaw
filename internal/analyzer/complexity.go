@@ -41,7 +41,7 @@ func (a *complexityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 				cog := cognitiveComplexity(fn)
 
 				if cyc > maxCyc {
-					file2, line, endLine := NodeInfo(ctx.FSET, fn)
+					file2, line, endLine := nodeInfo(ctx.FSET, fn)
 					findings = append(findings, Finding{
 						Analyzer:   a.Name(),
 						Category:   a.Category(),
@@ -55,7 +55,7 @@ func (a *complexityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 						Suggestion:  "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
 					})
 				} else if cog > maxCog {
-					file2, line, endLine := NodeInfo(ctx.FSET, fn)
+					file2, line, endLine := nodeInfo(ctx.FSET, fn)
 					findings = append(findings, Finding{
 						Analyzer:   a.Name(),
 						Category:   a.Category(),

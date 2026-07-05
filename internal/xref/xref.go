@@ -3,7 +3,6 @@
 package xref
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +11,7 @@ import (
 )
 
 // CombinedFinding represents overlapping findings from multiple analyzers.
+//gollaw:keep
 type CombinedFinding struct {
 	Findings   []analyzer.Finding `json:"findings"`
 	Kind       string             `json:"kind"`
@@ -120,9 +120,4 @@ func FormatXRefText(combined []CombinedFinding) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-// FormatXRefJSON formats cross-reference findings as JSON.
-func FormatXRefJSON(combined []CombinedFinding) ([]byte, error) {
-	return json.MarshalIndent(combined, "", "  ")
 }

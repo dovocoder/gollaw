@@ -3,7 +3,6 @@
 package walkthrough
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 )
 
 // WalkthroughStep represents a single step in a guided walkthrough.
+//gollaw:keep
 type WalkthroughStep struct {
 	Title       string              `json:"title"`
 	Description string              `json:"description"`
@@ -20,6 +20,7 @@ type WalkthroughStep struct {
 }
 
 // WalkthroughResult holds the complete guided walkthrough.
+//gollaw:keep
 type WalkthroughResult struct {
 	Steps         []WalkthroughStep `json:"steps"`
 	TotalFindings int               `json:"totalFindings"`
@@ -258,9 +259,4 @@ func FormatWalkthroughText(result *WalkthroughResult) string {
 	}
 
 	return b.String()
-}
-
-// FormatWalkthroughJSON renders a walkthrough result as JSON.
-func FormatWalkthroughJSON(result *WalkthroughResult) ([]byte, error) {
-	return json.MarshalIndent(result, "", "  ")
 }

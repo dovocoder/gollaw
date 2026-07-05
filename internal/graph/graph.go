@@ -8,20 +8,25 @@ import (
 )
 
 // ModuleGraph is the dependency graph of Go packages in a codebase.
+//gollaw:keep
 type ModuleGraph struct {
 	// Nodes holds one node per Go package, indexed by node ID.
 	Nodes []ModuleNode
 	// Edges holds import relationships between packages.
 	Edges []ModuleEdge
+	//gollaw:keep
 	// reverseDeps maps a package path → node IDs of packages that import it (fan-in targets).
 	reverseDeps map[string][]int
+	//gollaw:keep
 	// forwardDeps maps a package path → node IDs of packages it imports (fan-out targets).
 	forwardDeps map[string][]int
+	//gollaw:keep
 	// pathIndex maps a package path → node ID for O(1) lookup.
 	pathIndex map[string]int
 }
 
 // ModuleNode represents a single Go package in the graph.
+//gollaw:keep
 type ModuleNode struct {
 	Path         string
 	Name         string
@@ -31,6 +36,7 @@ type ModuleNode struct {
 }
 
 // ModuleEdge represents an import relationship from one package to another.
+//gollaw:keep
 type ModuleEdge struct {
 	Source  int
 	Target  int
@@ -120,16 +126,6 @@ func (g *ModuleGraph) ReverseDeps(path string) []int {
 // ForwardDeps returns the node IDs of packages imported by the given package.
 func (g *ModuleGraph) ForwardDeps(path string) []int {
 	return g.forwardDeps[path]
-}
-
-// NodeCount returns the number of nodes in the graph.
-func (g *ModuleGraph) NodeCount() int {
-	return len(g.Nodes)
-}
-
-// EdgeCount returns the number of edges in the graph.
-func (g *ModuleGraph) EdgeCount() int {
-	return len(g.Edges)
 }
 
 // extractImportedSymbols builds a map of import-path → symbol names used from that import.

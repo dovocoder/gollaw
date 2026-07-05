@@ -34,6 +34,7 @@ type CodebaseStats struct {
 }
 
 // Summary breaks down findings by severity and analyzer.
+//gollaw:keep
 type Summary struct {
 	Total           int                    `json:"total"`
 	BySeverity      map[string]int         `json:"bySeverity"`
@@ -42,6 +43,7 @@ type Summary struct {
 }
 
 // HealthScore is a 0-100 score derived from findings.
+//gollaw:keep
 type HealthScore struct {
 	Score     int                `json:"score"`
 	Grade     string             `json:"grade"`

@@ -3,7 +3,6 @@
 package explain
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/types"
 	"sort"
@@ -27,6 +26,7 @@ type Explanation struct {
 }
 
 // CallNode is a single node in a call chain.
+//gollaw:keep
 type CallNode struct {
 	Function string `json:"function"`
 	Location string `json:"location"` // file:line
@@ -113,11 +113,6 @@ func FormatExplanation(e *Explanation) string {
 	fmt.Fprintf(&b, "\nReason: %s\n", e.Reason)
 
 	return b.String()
-}
-
-// FormatExplanationJSON produces a JSON explanation.
-func FormatExplanationJSON(e *Explanation) ([]byte, error) {
-	return json.MarshalIndent(e, "", "  ")
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────

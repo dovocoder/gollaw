@@ -20,6 +20,7 @@ type ownerRule struct {
 }
 
 // CodeOwners holds the parsed CODEOWNERS rules.
+//gollaw:keep
 type CodeOwners struct {
 	rules []ownerRule
 }

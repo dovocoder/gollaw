@@ -35,9 +35,17 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		minLines = 6
 	}
 
-	// Collect all statement blocks and their structural hash.
+	blocksByHash := a.collectBlocks(ctx, minLines)
+	dupFindings := a.findDuplicates(blocksByHash)
+	return a.createDuplicationFindings(dupFindings), nil
+}
+
+// collectBlocks gathers all statement blocks and their structural hashes,
+// including function-body-level and sliding-window-level blocks.
+func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[string][]dupBlock {
 	blocksByHash := make(map[string][]dupBlock)
 
+	// Collect function-body-level blocks.
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
@@ -45,28 +53,8 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 				if !ok || fn.Body == nil {
 					continue
 				}
-				// Hash each maximal run of consecutive statements.
-				stmts := fn.Body.List
-				for i := 0; i < len(stmts); i++ {
-					for j := i + 1; j <= len(stmts); j++ {
-						run := stmts[i:j]
-						startPos := ctx.FSET.Position(run[0].Pos())
-						endPos := ctx.FSET.Position(run[len(run)-1].End())
-						lineCount := endPos.Line - startPos.Line + 1
-						if lineCount < minLines {
-							continue
-						}
 
-						h := hashStatements(run)
-						// Only keep the first (longest) run per starting position
-						// to avoid O(n^3) explosion. We use a window approach:
-						// expand as long as the hash matches.
-						_ = h
-						break // move to next start
-					}
-				}
-
-				// Simpler: hash the entire function body and compare.
+				// Hash the entire function body and compare.
 				bodyHash, stmtCount := hashBlock(fn.Body)
 				if stmtCount < minLines {
 					continue
@@ -98,8 +86,13 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	// Find hashes with >1 block (duplicates).
-	var findings []Finding
+	return blocksByHash
+}
+
+// findDuplicates identifies hashes with more than one block and returns
+// the duplicate pairs (original + duplicate).
+func (a *duplicationAnalyzer) findDuplicates(blocksByHash map[string][]dupBlock) []dupPair {
+	var pairs []dupPair
 	seen := make(map[string]bool) // dedup by file:line pairs
 
 	for hash, blocks := range blocksByHash {
@@ -122,20 +115,39 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 				continue
 			}
 			seen[dedupKey] = true
-
-			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityWarning,
-				Message:    fmt.Sprintf("duplicate code block (%d lines) in %s", dup.endLine-dup.line+1, dup.decl),
-				Detail:     fmt.Sprintf("first occurrence: %s:%d (hash: %s)", orig.file, orig.line, hash[:12]),
-				File:       dup.file,
-				Line:       dup.line,
-				EndLine:    dup.endLine,
-				RuleID:     "GLW-DP001",
-				Suggestion: "Extract the duplicated logic into a shared helper function.",
-			})
+			pairs = append(pairs, dupPair{orig: orig, dup: dup, hash: hash})
 		}
+	}
+	return pairs
+}
+
+// dupPair holds a duplicate block and its original.
+type dupPair struct {
+	orig dupBlock
+	dup  dupBlock
+	hash string
+}
+
+// createDuplicationFindings converts duplicate pairs into Finding objects,
+// sorted by file:line.
+func (a *duplicationAnalyzer) createDuplicationFindings(pairs []dupPair) []Finding {
+	var findings []Finding
+	for _, p := range pairs {
+		dup := p.dup
+		orig := p.orig
+		hash := p.hash
+		findings = append(findings, Finding{
+			Analyzer:  a.Name(),
+			Category:  a.Category(),
+			Severity:  SeverityWarning,
+			Message:    fmt.Sprintf("duplicate code block (%d lines) in %s", dup.endLine-dup.line+1, dup.decl),
+			Detail:     fmt.Sprintf("first occurrence: %s:%d (hash: %s)", orig.file, orig.line, hash[:12]),
+			File:       dup.file,
+			Line:       dup.line,
+			EndLine:    dup.endLine,
+			RuleID:     "GLW-DP001",
+			Suggestion: "Extract the duplicated logic into a shared helper function.",
+		})
 	}
 
 	sort.Slice(findings, func(i, j int) bool {
@@ -145,7 +157,7 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		return findings[i].Line < findings[j].Line
 	})
 
-	return findings, nil
+	return findings
 }
 
 // hashBlock produces a structural hash of an ast.BlockStmt.

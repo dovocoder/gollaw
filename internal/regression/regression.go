@@ -3,7 +3,6 @@
 package regression
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,6 +12,7 @@ import (
 )
 
 // RegressionResult holds the result of a regression check.
+//gollaw:keep
 type RegressionResult struct {
 	BaselineCount   int            `json:"baselineCount"`
 	CurrentCount    int            `json:"currentCount"`
@@ -152,9 +152,4 @@ func FormatRegressionText(result *RegressionResult) string {
 	}
 
 	return b.String()
-}
-
-// FormatRegressionJSON renders a regression result as JSON.
-func FormatRegressionJSON(result *RegressionResult) ([]byte, error) {
-	return json.MarshalIndent(result, "", "  ")
 }

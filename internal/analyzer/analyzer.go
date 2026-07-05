@@ -52,15 +52,17 @@ type Analyzer interface {
 	Analyze(ctx *Context) ([]Finding, error)
 }
 
-// Registry holds all available analyzers.
-type Registry struct {
+// registry holds all available analyzers.
+type registry struct {
+	//gollaw:keep
 	analyzers []Analyzer
-	byName    map[string]Analyzer
+	//gollaw:keep
+	byName map[string]Analyzer
 }
 
 // NewRegistry creates a registry with all built-in analyzers.
-func NewRegistry() *Registry {
-	r := &Registry{byName: make(map[string]Analyzer)}
+func NewRegistry() *registry {
+	r := &registry{byName: make(map[string]Analyzer)}
 	r.Register(newDeadCodeAnalyzer())
 	r.Register(newUnusedAnalyzer())
 	r.Register(newComplexityAnalyzer())
@@ -86,25 +88,25 @@ func NewRegistry() *Registry {
 }
 
 // Register adds an analyzer to the registry.
-func (r *Registry) Register(a Analyzer) {
+func (r *registry) Register(a Analyzer) {
 	r.analyzers = append(r.analyzers, a)
 	r.byName[a.Name()] = a
 }
 
 // Get returns an analyzer by name.
-func (r *Registry) Get(name string) (Analyzer, bool) {
+func (r *registry) Get(name string) (Analyzer, bool) {
 	a, ok := r.byName[name]
 	return a, ok
 }
 
 // All returns every registered analyzer.
-func (r *Registry) All() []Analyzer {
+func (r *registry) All() []Analyzer {
 	return r.analyzers
 }
 
 // Select returns the analyzers matching the given names.
 // If names is empty, all analyzers are returned.
-func (r *Registry) Select(names []string) []Analyzer {
+func (r *registry) Select(names []string) []Analyzer {
 	if len(names) == 0 {
 		return r.analyzers
 	}
@@ -118,7 +120,7 @@ func (r *Registry) Select(names []string) []Analyzer {
 }
 
 // Names returns all analyzer names.
-func (r *Registry) Names() []string {
+func (r *registry) Names() []string {
 	names := make([]string, len(r.analyzers))
 	for i, a := range r.analyzers {
 		names[i] = a.Name()

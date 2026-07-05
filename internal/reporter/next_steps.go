@@ -10,6 +10,7 @@ import (
 )
 
 // NextStep is an actionable recommendation derived from findings.
+//gollaw:keep
 type NextStep struct {
 	Action      string `json:"action"`
 	Priority    string `json:"priority"`
@@ -19,6 +20,7 @@ type NextStep struct {
 
 // FormatNextSteps renders actionable next-step recommendations as a JSON array.
 // At most 5 steps are returned, sorted by priority (critical > high > medium > low).
+//gollaw:keep
 func FormatNextSteps(report *Report) ([]byte, error) {
 	categoryCounts := make(map[string]int)
 	for _, f := range report.Findings {

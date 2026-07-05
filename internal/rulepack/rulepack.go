@@ -3,7 +3,6 @@
 package rulepack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,8 +20,8 @@ type RulePack struct {
 	Thresholds  map[string]int   `json:"thresholds,omitempty"`
 }
 
-// builtInPacks returns all built-in rule packs.
-func builtInPacks() []RulePack {
+// BuiltInPacks returns all built-in rule packs.
+func BuiltInPacks() []RulePack {
 	return []RulePack{
 		{
 			Name:        "clean-architecture",
@@ -98,14 +97,9 @@ func builtInPacks() []RulePack {
 	}
 }
 
-// ListPacks returns all built-in rule packs.
-func ListPacks() []RulePack {
-	return builtInPacks()
-}
-
 // GetPack returns the rule pack with the given name.
 func GetPack(name string) (*RulePack, error) {
-	for _, pack := range builtInPacks() {
+	for _, pack := range BuiltInPacks() {
 		if pack.Name == name {
 			return &pack, nil
 		}
@@ -196,7 +190,7 @@ func ApplyPack(name string, dir string) error {
 
 // listPackNames returns a comma-separated list of pack names.
 func listPackNames() string {
-	packs := builtInPacks()
+	packs := BuiltInPacks()
 	names := make([]string, len(packs))
 	for i, p := range packs {
 		names[i] = p.Name
@@ -255,7 +249,4 @@ func FormatPacksText(packs []RulePack) string {
 	return b.String()
 }
 
-// FormatPacksJSON renders a list of rule packs as JSON.
-func FormatPacksJSON(packs []RulePack) ([]byte, error) {
-	return json.MarshalIndent(packs, "", "  ")
-}
+

@@ -15,8 +15,16 @@ func (a *unusedMembersAnalyzer) Description() string   { return "Finds unused st
 
 func (a *unusedMembersAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	var findings []Finding
+	findings = append(findings, a.checkUnusedFields(ctx)...)
+	findings = append(findings, a.checkUnimplementedInterfaceMethods(ctx)...)
+	return findings, nil
+}
 
-	// Collect field usage
+// checkUnusedFields finds struct fields that are never accessed.
+func (a *unusedMembersAnalyzer) checkUnusedFields(ctx *Context) []Finding {
+	var findings []Finding
+
+	// Collect field usage.
 	fieldUsage := make(map[string]bool)
 	for _, pkg := range ctx.Packages {
 		if pkg.TypesInfo == nil {
@@ -34,7 +42,7 @@ func (a *unusedMembersAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	// Check struct fields
+	// Check struct fields.
 	for pkgPath, pkg := range ctx.TypesByPkg {
 		scope := pkg.Scope()
 		for _, name := range scope.Names() {
@@ -74,7 +82,15 @@ func (a *unusedMembersAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	// Check interface methods
+	return findings
+}
+
+// checkUnimplementedInterfaceMethods finds interface methods that have no
+// concrete implementations.
+func (a *unusedMembersAnalyzer) checkUnimplementedInterfaceMethods(ctx *Context) []Finding {
+	var findings []Finding
+
+	// Check interface methods.
 	for _, pkg := range ctx.TypesByPkg {
 		scope := pkg.Scope()
 		for _, name := range scope.Names() {
@@ -111,7 +127,7 @@ func (a *unusedMembersAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 	}
 
-	return findings, nil
+	return findings
 }
 
 func countImplementations(ctx *Context, methodName string) int {

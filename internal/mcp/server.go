@@ -226,357 +226,6 @@ func (s *server) handleInitialize(id json.RawMessage, params json.RawMessage) {
 	s.sendResponse(id, result)
 }
 
-func (s *server) handleToolsList(id json.RawMessage) {
-	tools := []toolDef{
-		{
-			Name:        "gollaw_analyze",
-			Description: "Run Gollaw analysis on a Go codebase directory. Returns all findings as JSON.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory to analyze (default: current directory)",
-					},
-					"patterns": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Go package patterns (default: [\"./...\"])",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_list_analyzers",
-			Description: "List all available Gollaw analyzers with their names and descriptions.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
-		},
-		{
-			Name:        "gollaw_explain",
-			Description: "Explain why a Go symbol (function, type, method) is unused or dead. Shows the call chain and reason.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase",
-					},
-					"symbol": map[string]interface{}{
-						"type":        "string",
-						"description": "Symbol name (e.g. \"MyFunc\", \"Type.Method\", \"pkg.Func\")",
-					},
-				},
-				"required": []string{"dir", "symbol"},
-			},
-		},
-		{
-			Name:        "gollaw_trace",
-			Description: "Trace callers or callees of a Go symbol. Returns all call chains as JSON.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase",
-					},
-					"symbol": map[string]interface{}{
-						"type":        "string",
-						"description": "Symbol name to trace",
-					},
-					"direction": map[string]interface{}{
-						"type":        "string",
-						"enum":        []string{"callers", "callees"},
-						"description": "Trace direction (default: callers)",
-					},
-					"maxDepth": map[string]interface{}{
-						"type":        "number",
-						"description": "Maximum trace depth (default: 10)",
-					},
-				},
-				"required": []string{"dir", "symbol"},
-			},
-		},
-		{
-			Name:        "gollaw_health",
-			Description: "Get the health score (0-100) for a Go codebase directory. Includes grade and per-category breakdown.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory to score (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_audit",
-			Description: "Run a PR audit: analyze changed files vs a git base ref, attribute findings as introduced vs pre-existing, and give a pass/warn/fail verdict.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-					"base_ref": map[string]interface{}{
-						"type":        "string",
-						"description": "Git base ref to diff against (default: origin/main)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_guard",
-			Description: "Get a pre-edit architecture guard report for a file: which rules apply and whether the file's package currently violates any rule.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"file_path": map[string]interface{}{
-						"type":        "string",
-						"description": "Path to the file to guard",
-					},
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-					"rules": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "Architecture rules in \"package must not import other\" format (optional; uses config if absent)",
-					},
-				},
-				"required": []string{"file_path"},
-			},
-		},
-		{
-			Name:        "gollaw_baseline_save",
-			Description: "Save the current set of findings as a baseline snapshot to .gollaw/baseline.json.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_baseline_diff",
-			Description: "Compare current findings against the saved baseline and return only new findings.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_public_api",
-			Description: "Analyze the public API surface: classify exports as confirmed public, accidental, or unused.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_coverage",
-			Description: "Analyze test coverage gaps: find functions that lack tests.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_file_scores",
-			Description: "Compute per-file health scores (0-100) based on findings attributed to each file.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_xref",
-			Description: "Cross-reference findings from multiple analyzers to find overlapping issues (e.g. duplicate + dead code).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_dupes",
-			Description: "Find duplicate code only (runs just the duplication analyzer).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_security",
-			Description: "Find security issues only (runs just the security analyzer).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_impact",
-			Description: "Get an impact report: counts of findings by severity, category, and analyzer.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_inspect",
-			Description: "Inspect a file or symbol: returns file identity, findings in file, health score, and call chain if the target is a symbol.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"target": map[string]interface{}{
-						"type":        "string",
-						"description": "File path or symbol name to inspect",
-					},
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-				"required": []string{"target"},
-			},
-		},
-		{
-			Name:        "gollaw_list_boundaries",
-			Description: "List all packages and which architecture rules apply to each.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_project_info",
-			Description: "Get project info: module name, Go version, package count, file count, function count, type count, and dependency count.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_check_changed",
-			Description: "Analyze only changed files (git diff against base ref) and return findings from those files.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-					"base_ref": map[string]interface{}{
-						"type":        "string",
-						"description": "Git base ref to diff against (default: origin/main)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_suppress",
-			Description: "Find stale suppression comments that no longer match any finding.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_owners",
-			Description: "Group findings by CODEOWNERS: maps each finding to its responsible owners.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "gollaw_fix_preview",
-			Description: "Preview auto-fixable findings: lists findings that have suggestions, optionally filtered by analyzer.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory containing the Go codebase (default: current directory)",
-					},
-					"analyzer": map[string]interface{}{
-						"type":        "string",
-						"description": "Filter to a specific analyzer name (optional)",
-					},
-				},
-			},
-		},
-	}
-	s.sendResponse(id, toolsListResult{Tools: tools})
-}
-
 func (s *server) handleToolsCall(id json.RawMessage, params json.RawMessage) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -652,10 +301,7 @@ func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
 
 	ctx, findings, err := loadAndAnalyze(p.Dir, p.Patterns)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 	_ = ctx
@@ -674,10 +320,7 @@ func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
 	}
 	rep := reporter.BuildReport("0.1.0", p.Patterns, nil, stats, findings)
 
-	data, _ := json.MarshalIndent(rep, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, rep)
 }
 
 func (s *server) toolListAnalyzers(id json.RawMessage) {
@@ -695,10 +338,7 @@ func (s *server) toolListAnalyzers(id json.RawMessage) {
 			Category:    string(a.Category()),
 		})
 	}
-	data, _ := json.MarshalIndent(list, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, list)
 }
 
 func (s *server) toolExplain(id json.RawMessage, args json.RawMessage) {
@@ -717,26 +357,17 @@ func (s *server) toolExplain(id json.RawMessage, args json.RawMessage) {
 
 	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	expl, err := explain.ExplainUnused(ctx, p.Symbol)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(expl, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, expl)
 }
 
 func (s *server) toolTrace(id json.RawMessage, args json.RawMessage) {
@@ -760,10 +391,7 @@ func (s *server) toolTrace(id json.RawMessage, args json.RawMessage) {
 
 	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -778,17 +406,11 @@ func (s *server) toolTrace(id json.RawMessage, args json.RawMessage) {
 		return
 	}
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, result)
 }
 
 func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
@@ -801,10 +423,7 @@ func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -837,26 +456,17 @@ func (s *server) toolAudit(id json.RawMessage, args json.RawMessage) {
 
 	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	auditRep, err := audit.RunAudit(ctx, p.BaseRef, findings, p.Dir)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(auditRep, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, auditRep)
 }
 
 func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
@@ -905,10 +515,7 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -925,17 +532,11 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 	absPath, _ := filepath.Abs(p.FilePath)
 	guardRep, err := guard.BuildGuardReport(ctx, archRules, absPath)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(guardRep, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, guardRep)
 }
 
 func (s *server) toolBaselineSave(id json.RawMessage, args json.RawMessage) {
@@ -948,18 +549,12 @@ func (s *server) toolBaselineSave(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	if err := baseline.Save(p.Dir, findings); err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -982,19 +577,13 @@ func (s *server) toolBaselineDiff(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	bl, err := baseline.Load(p.Dir)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1020,26 +609,17 @@ func (s *server) toolPublicAPI(id json.RawMessage, args json.RawMessage) {
 
 	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	apiRep, err := publicapi.AnalyzePublicAPI(ctx)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(apiRep, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, apiRep)
 }
 
 func (s *server) toolCoverage(id json.RawMessage, args json.RawMessage) {
@@ -1052,26 +632,17 @@ func (s *server) toolCoverage(id json.RawMessage, args json.RawMessage) {
 
 	ctx, _, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	covRep, err := coverage.AnalyzeCoverage(ctx)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(covRep, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, covRep)
 }
 
 func (s *server) toolFileScores(id json.RawMessage, args json.RawMessage) {
@@ -1084,18 +655,12 @@ func (s *server) toolFileScores(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	scores := filescore.ScoreFiles(findings, nil)
-	data, _ := json.MarshalIndent(scores, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, scores)
 }
 
 func (s *server) toolXRef(id json.RawMessage, args json.RawMessage) {
@@ -1108,18 +673,12 @@ func (s *server) toolXRef(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	combined := xref.CrossReference(findings)
-	data, _ := json.MarshalIndent(combined, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, combined)
 }
 
 func (s *server) toolDupes(id json.RawMessage, args json.RawMessage) {
@@ -1132,17 +691,11 @@ func (s *server) toolDupes(id json.RawMessage, args json.RawMessage) {
 
 	findings, err := runAnalyzersByName(p.Dir, []string{"duplication"})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(findings, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, findings)
 }
 
 func (s *server) toolSecurity(id json.RawMessage, args json.RawMessage) {
@@ -1155,17 +708,11 @@ func (s *server) toolSecurity(id json.RawMessage, args json.RawMessage) {
 
 	findings, err := runAnalyzersByName(p.Dir, []string{"security"})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
-	data, _ := json.MarshalIndent(findings, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, findings)
 }
 
 func (s *server) toolImpact(id json.RawMessage, args json.RawMessage) {
@@ -1178,10 +725,7 @@ func (s *server) toolImpact(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1220,10 +764,7 @@ func (s *server) toolInspect(id json.RawMessage, args json.RawMessage) {
 
 	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1231,19 +772,13 @@ func (s *server) toolInspect(id json.RawMessage, args json.RawMessage) {
 	isFile := strings.HasSuffix(p.Target, ".go") || filepath.Ext(p.Target) != ""
 	if isFile {
 		result := s.inspectFile(ctx, findings, p.Target)
-		data, _ := json.MarshalIndent(result, "", "  ")
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: string(data)}},
-		})
+		s.sendToolJSON(id, result)
 		return
 	}
 
 	// Otherwise treat target as a symbol name.
 	result := s.inspectSymbol(ctx, findings, p.Target)
-	data, _ := json.MarshalIndent(result, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, result)
 }
 
 func (s *server) inspectFile(ctx *analyzer.Context, findings []analyzer.Finding, target string) map[string]interface{} {
@@ -1365,10 +900,7 @@ func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
 
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1425,10 +957,7 @@ func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
 
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: p.Dir})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1449,10 +978,7 @@ func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
 		"dependencyCount": depCount,
 	}
 
-	data, _ := json.MarshalIndent(info, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, info)
 }
 
 func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
@@ -1469,20 +995,14 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	// Get changed files via git.
 	changedFiles, err := getChangedFiles(p.BaseRef, p.Dir)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1524,10 +1044,7 @@ func (s *server) toolSuppress(id json.RawMessage, args json.RawMessage) {
 
 	ctx, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1538,10 +1055,7 @@ func (s *server) toolSuppress(id json.RawMessage, args json.RawMessage) {
 	}
 	sup, err := suppress.ParseSuppressions(ctx.FSET, allFiles)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1566,36 +1080,24 @@ func (s *server) toolOwners(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	ownersFile, err := codeowners.FindCodeOwnersFile(p.Dir)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	owners, err := codeowners.Parse(ownersFile)
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
 	groups := codeowners.GroupByOwner(findings, owners)
-	data, _ := json.MarshalIndent(groups, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	s.sendToolJSON(id, groups)
 }
 
 func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
@@ -1609,10 +1111,7 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 
 	_, findings, err := loadAndAnalyze(p.Dir, []string{"./..."})
 	if err != nil {
-		s.sendResponse(id, callToolResult{
-			Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
-			IsError: true,
-		})
+		s.sendToolError(id, err)
 		return
 	}
 
@@ -1644,7 +1143,17 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
-// loadAndAnalyze loads the codebase and runs all analyzers.
+// sendToolError sends an error response for a tool call.
+func (s *server) sendToolError(id json.RawMessage, err error) {
+	s.sendToolError(id, err)
+}
+
+// sendToolJSON sends a JSON response for a tool call.
+func (s *server) sendToolJSON(id json.RawMessage, v interface{}) {
+	s.sendToolJSON(id, v)
+}
+
+// loadAndalyze loads the codebase and runs all analyzers.
 // Returns the analyzer context (for explain/trace) and all findings.
 func loadAndAnalyze(dir string, patterns []string) (*analyzer.Context, []analyzer.Finding, error) {
 	if len(patterns) == 0 {
