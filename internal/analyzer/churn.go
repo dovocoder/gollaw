@@ -21,90 +21,124 @@ func (a *churnAnalyzer) Category() Category  { return CategoryCodeSmell }
 func (a *churnAnalyzer) Description() string { return "Files with high git churn (frequent changes indicate maintenance hotspots)" }
 
 func (a *churnAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	// Find the git root from the first package.
-	var modDir string
-	for _, pkg := range ctx.Packages {
-		if len(pkg.GoFiles) > 0 {
-			modDir = findGoModDir(filepath.Dir(pkg.GoFiles[0]))
-			if modDir != "" {
-				break
-			}
-		}
-	}
+	modDir := findGitRoot(ctx)
 	if modDir == "" {
 		return nil, nil
 	}
 
-	// Run git log to count commits per file.
+	fileCommits, err := runGitLogForChurn(modDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	maxCommits := findMaxCommitCount(fileCommits)
+	if maxCommits == 0 {
+		return nil, nil
+	}
+
+	findings := a.buildChurnFindings(modDir, fileCommits, maxCommits)
+	sortChurnFindings(findings)
+	return findings, nil
+}
+
+// findGitRoot locates the git repository root from the loaded packages.
+func findGitRoot(ctx *Context) string {
+	for _, pkg := range ctx.Packages {
+		if len(pkg.GoFiles) > 0 {
+			modDir := findGoModDir(filepath.Dir(pkg.GoFiles[0]))
+			if modDir != "" {
+				return modDir
+			}
+		}
+	}
+	return ""
+}
+
+// runGitLogForChurn executes git log to count commits per file over the
+// last 6 months.
+func runGitLogForChurn(modDir string) (map[string]int, error) {
 	cmd := exec.Command("git", "log", "--name-only", "--pretty=format:", "--since=6 months ago")
 	cmd.Dir = modDir
 	output, err := cmd.Output()
 	if err != nil {
-		// Not a git repo or git not available — skip.
-		return nil, nil
+		return nil, err
 	}
+	return countCommitsPerFile(string(output)), nil
+}
 
-	// Count commits per file.
+// countCommitsPerFile parses git log output into a file → commit-count map.
+func countCommitsPerFile(output string) map[string]int {
 	fileCommits := make(map[string]int)
-	for _, line := range strings.Split(string(output), "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		fileCommits[line]++
 	}
+	return fileCommits
+}
 
-	// Find max for normalization.
+// findMaxCommitCount returns the highest commit count across all files.
+func findMaxCommitCount(fileCommits map[string]int) int {
 	maxCommits := 0
 	for _, count := range fileCommits {
 		if count > maxCommits {
 			maxCommits = count
 		}
 	}
-	if maxCommits == 0 {
-		return nil, nil
-	}
+	return maxCommits
+}
 
-	// Flag files with high churn.
+// buildChurnFindings creates findings for files with 10+ commits.
+func (a *churnAnalyzer) buildChurnFindings(modDir string, fileCommits map[string]int, maxCommits int) []Finding {
 	var findings []Finding
 	for file, count := range fileCommits {
 		if count < 10 {
 			continue
 		}
-
-		sev := SeverityInfo
-		if count > 50 {
-			sev = SeverityWarning
-		}
-		if count > 100 {
-			sev = SeverityCritical
-		}
-
-		fullPath := filepath.Join(modDir, file)
-		findings = append(findings, Finding{
-			Analyzer:  a.Name(),
-			Category:  a.Category(),
-			Severity:  sev,
-			Message:    fmt.Sprintf("high churn: %s changed %d times in the last 6 months", file, count),
-			Detail:     fmt.Sprintf("churn rate: %.0f%% of max (%d)", float64(count)/float64(maxCommits)*100, maxCommits),
-			File:       fullPath,
-			Line:       1,
-			RuleID:     "GLW-CH001",
-			Suggestion: "High-churn files are maintenance hotspots. Consider splitting them, adding more tests, or stabilizing the interface.",
-		})
+		findings = append(findings, a.createChurnFinding(modDir, file, count, maxCommits))
 	}
+	return findings
+}
 
-	// Also report overall churn summary as an info finding.
+// createChurnFinding builds a single churn finding for a high-churn file.
+func (a *churnAnalyzer) createChurnFinding(modDir, file string, count, maxCommits int) Finding {
+	sev := churnSeverity(count)
+	fullPath := filepath.Join(modDir, file)
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   sev,
+		Message:     fmt.Sprintf("high churn: %s changed %d times in the last 6 months", file, count),
+		Detail:      fmt.Sprintf("churn rate: %.0f%% of max (%d)", float64(count)/float64(maxCommits)*100, maxCommits),
+		File:        fullPath,
+		Line:        1,
+		RuleID:      "GLW-CH001",
+		Suggestion:  "High-churn files are maintenance hotspots. Consider splitting them, adding more tests, or stabilizing the interface.",
+	}
+}
+
+// churnSeverity maps commit count to a severity level.
+func churnSeverity(count int) Severity {
+	switch {
+	case count > 100:
+		return SeverityCritical
+	case count > 50:
+		return SeverityWarning
+	default:
+		return SeverityInfo
+	}
+}
+
+// sortChurnFindings sorts findings by churn count descending.
+func sortChurnFindings(findings []Finding) {
 	_ = strconv.Itoa
-
 	sort.Slice(findings, func(i, j int) bool {
-		// Sort by churn count descending (most changed first).
 		iCount := 0
 		jCount := 0
 		fmt.Sscanf(findings[i].Detail, "churn rate: %*d%% of max (%d)", &iCount)
 		fmt.Sscanf(findings[j].Detail, "churn rate: %*d%% of max (%d)", &jCount)
 		return iCount > jCount
 	})
-
-	return findings, nil
 }

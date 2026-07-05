@@ -14,85 +14,105 @@ import (
 
 // RulePack is a named collection of architecture rules and thresholds.
 type RulePack struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Rules       []analyzer.Rule  `json:"rules"`
-	Thresholds  map[string]int   `json:"thresholds,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Rules       []analyzer.Rule `json:"rules"`
+	Thresholds  map[string]int  `json:"thresholds,omitempty"`
 }
 
 // BuiltInPacks returns all built-in rule packs.
 func BuiltInPacks() []RulePack {
 	return []RulePack{
-		{
-			Name:        "clean-architecture",
-			Description: "Clean Architecture: domain must not depend on outer layers",
-			Rules: []analyzer.Rule{
-				{Package: "domain", MustNotUse: "infrastructure"},
-				{Package: "domain", MustNotUse: "transport"},
-				{Package: "usecase", MustNotUse: "transport"},
-				{Package: "usecase", MustNotUse: "infrastructure"},
-				{Package: "domain", MustNotUse: "usecase"},
-			},
-			Thresholds: map[string]int{
-				"max-cyclomatic":    10,
-				"max-function-lines": 40,
-			},
+		cleanArchitecturePack(),
+		hexagonalPack(),
+		microservicePack(),
+		libraryPack(),
+		monolithPack(),
+	}
+}
+
+func cleanArchitecturePack() RulePack {
+	return RulePack{
+		Name:        "clean-architecture",
+		Description: "Clean Architecture: domain must not depend on outer layers",
+		Rules: []analyzer.Rule{
+			{Package: "domain", MustNotUse: "infrastructure"},
+			{Package: "domain", MustNotUse: "transport"},
+			{Package: "usecase", MustNotUse: "transport"},
+			{Package: "usecase", MustNotUse: "infrastructure"},
+			{Package: "domain", MustNotUse: "usecase"},
 		},
-		{
-			Name:        "hexagonal",
-			Description: "Hexagonal Architecture (Ports & Adapters): ports must not depend on adapters",
-			Rules: []analyzer.Rule{
-				{Package: "ports", MustNotUse: "adapters"},
-				{Package: "adapters", MustNotUse: "adapters"},
-				{Package: "core", MustNotUse: "adapters"},
-				{Package: "domain", MustNotUse: "adapters"},
-			},
-			Thresholds: map[string]int{
-				"max-cyclomatic":    12,
-				"max-function-lines": 50,
-			},
+		Thresholds: map[string]int{
+			"max-cyclomatic":    10,
+			"max-function-lines": 40,
 		},
-		{
-			Name:        "microservice",
-			Description: "Microservice boundaries: service layers must not leak across boundaries",
-			Rules: []analyzer.Rule{
-				{Package: "api", MustNotUse: "store"},
-				{Package: "handler", MustNotUse: "repository"},
-				{Package: "handler", MustNotUse: "store"},
-				{Package: "service", MustNotUse: "handler"},
-			},
-			Thresholds: map[string]int{
-				"max-cyclomatic":    15,
-				"max-function-lines": 60,
-			},
+	}
+}
+
+func hexagonalPack() RulePack {
+	return RulePack{
+		Name:        "hexagonal",
+		Description: "Hexagonal Architecture (Ports & Adapters): ports must not depend on adapters",
+		Rules: []analyzer.Rule{
+			{Package: "ports", MustNotUse: "adapters"},
+			{Package: "adapters", MustNotUse: "adapters"},
+			{Package: "core", MustNotUse: "adapters"},
+			{Package: "domain", MustNotUse: "adapters"},
 		},
-		{
-			Name:        "library",
-			Description: "Library rules: no internal cycles, stable public API",
-			Rules: []analyzer.Rule{
-				{Package: "internal", MustNotUse: "internal"},
-			},
-			Thresholds: map[string]int{
-				"max-cyclomatic":    10,
-				"max-function-lines": 40,
-				"min-dup-lines":      4,
-			},
+		Thresholds: map[string]int{
+			"max-cyclomatic":    12,
+			"max-function-lines": 50,
 		},
-		{
-			Name:        "monolith",
-			Description: "Standard layered monolith: handler → service → repository",
-			Rules: []analyzer.Rule{
-				{Package: "handler", MustNotUse: "repository"},
-				{Package: "handler", MustNotUse: "model"},
-				{Package: "repository", MustNotUse: "handler"},
-				{Package: "model", MustNotUse: "handler"},
-				{Package: "model", MustNotUse: "repository"},
-			},
-			Thresholds: map[string]int{
-				"max-cyclomatic":    15,
-				"max-cognitive":     20,
-				"max-function-lines": 50,
-			},
+	}
+}
+
+func microservicePack() RulePack {
+	return RulePack{
+		Name:        "microservice",
+		Description: "Microservice boundaries: service layers must not leak across boundaries",
+		Rules: []analyzer.Rule{
+			{Package: "api", MustNotUse: "store"},
+			{Package: "handler", MustNotUse: "repository"},
+			{Package: "handler", MustNotUse: "store"},
+			{Package: "service", MustNotUse: "handler"},
+		},
+		Thresholds: map[string]int{
+			"max-cyclomatic":    15,
+			"max-function-lines": 60,
+		},
+	}
+}
+
+func libraryPack() RulePack {
+	return RulePack{
+		Name:        "library",
+		Description: "Library rules: no internal cycles, stable public API",
+		Rules: []analyzer.Rule{
+			{Package: "internal", MustNotUse: "internal"},
+		},
+		Thresholds: map[string]int{
+			"max-cyclomatic":    10,
+			"max-function-lines": 40,
+			"min-dup-lines":      4,
+		},
+	}
+}
+
+func monolithPack() RulePack {
+	return RulePack{
+		Name:        "monolith",
+		Description: "Standard layered monolith: handler → service → repository",
+		Rules: []analyzer.Rule{
+			{Package: "handler", MustNotUse: "repository"},
+			{Package: "handler", MustNotUse: "model"},
+			{Package: "repository", MustNotUse: "handler"},
+			{Package: "model", MustNotUse: "handler"},
+			{Package: "model", MustNotUse: "repository"},
+		},
+		Thresholds: map[string]int{
+			"max-cyclomatic":    15,
+			"max-cognitive":     20,
+			"max-function-lines": 50,
 		},
 	}
 }
@@ -116,33 +136,47 @@ func ApplyPack(name string, dir string) error {
 	}
 
 	configPath := filepath.Join(dir, ".gollaw.yaml")
+	cfg := loadOrCreateConfig(configPath)
 
-	// Read existing config or create a new one.
+	mergePackRules(&cfg, pack)
+	mergePackThresholds(&cfg, pack)
+
+	return writeConfig(configPath, name, cfg)
+}
+
+// loadOrCreateConfig reads the existing .gollaw.yaml or returns a default config.
+func loadOrCreateConfig(configPath string) configYAML {
 	var cfg configYAML
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return fmt.Errorf("parse existing .gollaw.yaml: %w", err)
+			return defaultConfig()
 		}
-	} else {
-		// Create a default config.
-		cfg = configYAML{
-			Analyzers: analyzersYAML{
-				Enabled:  []string{},
-				Disabled: []string{},
-			},
-			Thresholds: thresholdsYAML{
-				MaxCyclomatic:    15,
-				MaxCognitive:     20,
-				MaxFunctionLines: 50,
-				MinDupLines:      6,
-			},
-			Rules:  []string{},
-			Ignore: []string{"vendor/**", "**/*_test.go", "**/testdata/**"},
-			Severity: severityYAML{Min: "hint"},
-		}
+		return cfg
 	}
+	return defaultConfig()
+}
 
-	// Merge pack rules into existing rules (avoid duplicates).
+// defaultConfig returns a fresh config with sensible defaults.
+func defaultConfig() configYAML {
+	return configYAML{
+		Analyzers: analyzersYAML{
+			Enabled:  []string{},
+			Disabled: []string{},
+		},
+		Thresholds: thresholdsYAML{
+			MaxCyclomatic:    15,
+			MaxCognitive:     20,
+			MaxFunctionLines: 50,
+			MinDupLines:      6,
+		},
+		Rules:    []string{},
+		Ignore:   []string{"vendor/**", "**/*_test.go", "**/testdata/**"},
+		Severity: severityYAML{Min: "hint"},
+	}
+}
+
+// mergePackRules adds pack rules to the config, avoiding duplicates.
+func mergePackRules(cfg *configYAML, pack *RulePack) {
 	existingRules := make(map[string]bool)
 	for _, r := range cfg.Rules {
 		existingRules[r] = true
@@ -154,37 +188,39 @@ func ApplyPack(name string, dir string) error {
 			existingRules[ruleStr] = true
 		}
 	}
+}
 
-	// Merge thresholds (pack thresholds override if higher specificity).
-	if pack.Thresholds != nil {
-		if v, ok := pack.Thresholds["max-cyclomatic"]; ok && v > 0 {
-			cfg.Thresholds.MaxCyclomatic = v
-		}
-		if v, ok := pack.Thresholds["max-cognitive"]; ok && v > 0 {
-			cfg.Thresholds.MaxCognitive = v
-		}
-		if v, ok := pack.Thresholds["max-function-lines"]; ok && v > 0 {
-			cfg.Thresholds.MaxFunctionLines = v
-		}
-		if v, ok := pack.Thresholds["min-dup-lines"]; ok && v > 0 {
-			cfg.Thresholds.MinDupLines = v
-		}
+// mergePackThresholds applies pack thresholds to the config (overriding values).
+func mergePackThresholds(cfg *configYAML, pack *RulePack) {
+	if pack.Thresholds == nil {
+		return
 	}
+	applyThreshold(&cfg.Thresholds.MaxCyclomatic, pack.Thresholds, "max-cyclomatic")
+	applyThreshold(&cfg.Thresholds.MaxCognitive, pack.Thresholds, "max-cognitive")
+	applyThreshold(&cfg.Thresholds.MaxFunctionLines, pack.Thresholds, "max-function-lines")
+	applyThreshold(&cfg.Thresholds.MinDupLines, pack.Thresholds, "min-dup-lines")
+}
 
-	// Write config back.
+// applyThreshold sets *dst from thresholds[key] if the key exists and is > 0.
+func applyThreshold(dst *int, thresholds map[string]int, key string) {
+	if v, ok := thresholds[key]; ok && v > 0 {
+		*dst = v
+	}
+}
+
+// writeConfig marshals and writes the config to disk with a header comment.
+func writeConfig(configPath, name string, cfg configYAML) error {
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	// Add a header comment.
 	header := fmt.Sprintf("# .gollaw.yaml — rule pack '%s' applied\n", name)
 	output := header + string(data)
 
 	if err := os.WriteFile(configPath, []byte(output), 0o644); err != nil {
 		return fmt.Errorf("write .gollaw.yaml: %w", err)
 	}
-
 	return nil
 }
 
@@ -200,11 +236,11 @@ func listPackNames() string {
 
 // configYAML mirrors the .gollaw.yaml structure for reading/writing.
 type configYAML struct {
-	Analyzers  analyzersYAML   `yaml:"analyzers"`
-	Thresholds thresholdsYAML  `yaml:"thresholds"`
-	Rules      []string        `yaml:"rules"`
-	Ignore     []string        `yaml:"ignore"`
-	Severity   severityYAML    `yaml:"severity"`
+	Analyzers  analyzersYAML  `yaml:"analyzers"`
+	Thresholds thresholdsYAML `yaml:"thresholds"`
+	Rules      []string       `yaml:"rules"`
+	Ignore     []string       `yaml:"ignore"`
+	Severity   severityYAML   `yaml:"severity"`
 }
 
 type analyzersYAML struct {
@@ -248,5 +284,3 @@ func FormatPacksText(packs []RulePack) string {
 
 	return b.String()
 }
-
-

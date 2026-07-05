@@ -56,7 +56,7 @@ func (a *securityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	return findings, nil
 }
 
-// checkTODOComments scans comments for TODO/FIXME markers and secrets in comments.
+// checkTODOComments scans comments for pending markers and secrets in comments.
 func (a *securityAnalyzer) checkTODOComments(ctx *Context, file *ast.File, todoPattern *regexp.Regexp) []Finding {
 	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {

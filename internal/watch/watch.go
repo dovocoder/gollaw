@@ -3,7 +3,6 @@
 package watch
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,8 +26,20 @@ func Watch(dir string, patterns []string, onChange func()) error {
 	}
 	defer watcher.Close()
 
-	// Add directories recursively.
-	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	if err := addWatchDirs(watcher, dir); err != nil {
+		return err
+	}
+
+	d := newDebouncer(500*time.Millisecond, onChange)
+	debounceEvent := func(_ fsnotify.Event) { d.trigger() }
+
+	return watchLoop(watcher, debounceEvent)
+}
+
+// addWatchDirs recursively adds directories to the watcher, skipping
+// hidden directories, vendor, node_modules, and testdata.
+func addWatchDirs(watcher *fsnotify.Watcher, dir string) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // skip errors
 		}
@@ -40,34 +51,21 @@ func Watch(dir string, patterns []string, onChange func()) error {
 		}
 		return watcher.Add(path)
 	})
-	if err != nil {
-		return fmt.Errorf("walk directory: %w", err)
-	}
+}
 
-	// Debounce timer.
-	var timer *time.Timer
-	var mu sync.Mutex
-
+// watchLoop processes fsnotify events and errors. The onEvent callback
+// is invoked for each relevant .go file event. Returns on channel close
+// or error.
+func watchLoop(watcher *fsnotify.Watcher, onEvent func(fsnotify.Event)) error {
 	for {
 		select {
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
 			}
-			// Only care about .go files.
-			if !strings.HasSuffix(event.Name, ".go") {
-				continue
+			if isRelevantGoEvent(event) {
+				onEvent(event)
 			}
-			// Only trigger on write/create/rename/remove events.
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
-				continue
-			}
-			mu.Lock()
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.AfterFunc(500*time.Millisecond, onChange)
-			mu.Unlock()
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -80,12 +78,63 @@ func Watch(dir string, patterns []string, onChange func()) error {
 	}
 }
 
+// isRelevantGoEvent returns true for write/create/rename/remove events
+// on .go files.
+func isRelevantGoEvent(event fsnotify.Event) bool {
+	if !strings.HasSuffix(event.Name, ".go") {
+		return false
+	}
+	return event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0
+}
+
+// debouncer wraps a timer-based debounce mechanism.
+type debouncer struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	delay   time.Duration
+	onFire  func()
+}
+
+func newDebouncer(delay time.Duration, onFire func()) *debouncer {
+	return &debouncer{delay: delay, onFire: onFire}
+}
+
+// trigger (re)schedules the debounced callback.
+func (d *debouncer) trigger() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+	d.timer = time.AfterFunc(d.delay, d.onFire)
+}
+
 // watchPoll is a fallback polling-based watcher for when fsnotify is unavailable.
 // It checks file modification times every 1 second and triggers onChange after
 // a 500ms debounce.
 func watchPoll(dir string, patterns []string, onChange func()) error {
+	modTimes := scanGoModTimes(dir)
+
+	d := newDebouncer(500*time.Millisecond, onChange)
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		current := scanGoModTimes(dir)
+		if hasChangedFiles(modTimes, current) {
+			d.trigger()
+		}
+		modTimes = current
+	}
+
+	return nil
+}
+
+// scanGoModTimes walks the directory tree and returns a map of .go file
+// paths to their modification times (in UnixNano).
+func scanGoModTimes(dir string) map[string]int64 {
 	modTimes := make(map[string]int64)
-	// Initial scan.
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -101,67 +150,29 @@ func watchPoll(dir string, patterns []string, onChange func()) error {
 		}
 		return nil
 	})
+	return modTimes
+}
 
-	var timer *time.Timer
-	var mu sync.Mutex
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		current := make(map[string]int64)
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil
-			}
-			if info.IsDir() {
-				if shouldSkipDir(path) {
-					return filepath.SkipDir
-				}
-				return nil
-			}
+// hasChangedFiles compares two mod-time maps and returns true if any .go
+// file was added, modified, or deleted.
+func hasChangedFiles(old, current map[string]int64) bool {
+	// Check for new or modified files.
+	for path, mtime := range current {
+		if oldMtime, ok := old[path]; !ok || oldMtime != mtime {
 			if strings.HasSuffix(path, ".go") {
-				current[path] = info.ModTime().UnixNano()
+				return true
 			}
-			return nil
-		})
-
-		changed := false
-		// Check for new or modified files.
-		for path, mtime := range current {
-			if old, ok := modTimes[path]; !ok || old != mtime {
-				if !strings.HasSuffix(path, ".go") {
-					continue
-				}
-				changed = true
-				break
-			}
-		}
-		// Check for deleted files.
-		if !changed {
-			for path := range modTimes {
-				if _, ok := current[path]; !ok {
-					if strings.HasSuffix(path, ".go") {
-						changed = true
-						break
-					}
-				}
-			}
-		}
-
-		modTimes = current
-
-		if changed {
-			mu.Lock()
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.AfterFunc(500*time.Millisecond, onChange)
-			mu.Unlock()
 		}
 	}
-
-	return nil
+	// Check for deleted files.
+	for path := range old {
+		if _, ok := current[path]; !ok {
+			if strings.HasSuffix(path, ".go") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 //gollaw:keep

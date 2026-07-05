@@ -52,34 +52,38 @@ func (a *deadCodeAnalyzer) collectAllFunctions(ssaByPkg map[string]*ssa.Package)
 		if ssaPkg == nil {
 			continue
 		}
-		// Package-level functions.
 		for _, member := range ssaPkg.Members {
-			if fn, ok := member.(*ssa.Function); ok {
-				collect(fn)
-			}
-			// Methods on named types (both value and pointer receivers).
-			if typ, ok := member.(*ssa.Type); ok {
-				// Value receiver methods.
-				ms := ssaPkg.Prog.MethodSets.MethodSet(typ.Type())
-				for i := 0; i < ms.Len(); i++ {
-					fn := ssaPkg.Prog.MethodValue(ms.At(i))
-					if fn != nil && fn.Pkg == ssaPkg {
-						collect(fn)
-					}
-				}
-				// Pointer receiver methods.
-				pointerType := types.NewPointer(typ.Type())
-				ms2 := ssaPkg.Prog.MethodSets.MethodSet(pointerType)
-				for i := 0; i < ms2.Len(); i++ {
-					fn := ssaPkg.Prog.MethodValue(ms2.At(i))
-					if fn != nil && fn.Pkg == ssaPkg {
-						collect(fn)
-					}
-				}
-			}
+			collectPackageMember(ssaPkg, member, collect)
 		}
 	}
 	return allFns
+}
+
+// collectPackageMember collects functions from a package member, including
+// methods on named types (both value and pointer receivers).
+func collectPackageMember(ssaPkg *ssa.Package, member ssa.Member, collect func(*ssa.Function)) {
+	if fn, ok := member.(*ssa.Function); ok {
+		collect(fn)
+	}
+	typ, ok := member.(*ssa.Type)
+	if !ok {
+		return
+	}
+	collectMethodSet(ssaPkg, typ.Type(), collect)
+	pointerType := types.NewPointer(typ.Type())
+	collectMethodSet(ssaPkg, pointerType, collect)
+}
+
+// collectMethodSet collects all methods in the method set of a type
+// that belong to the given package.
+func collectMethodSet(ssaPkg *ssa.Package, recvType types.Type, collect func(*ssa.Function)) {
+	ms := ssaPkg.Prog.MethodSets.MethodSet(recvType)
+	for i := 0; i < ms.Len(); i++ {
+		fn := ssaPkg.Prog.MethodValue(ms.At(i))
+		if fn != nil && fn.Pkg == ssaPkg {
+			collect(fn)
+		}
+	}
 }
 
 // buildReachableSet performs a BFS from entry points through the call graph
@@ -97,9 +101,14 @@ func (a *deadCodeAnalyzer) buildReachableSet(ctx *Context, allFns map[string]*ss
 		}
 	}
 
-	// Entry points: main, init, exported functions/methods, AND all methods
-	// (since methods can be called via interface dispatch, which static
-	// call graph analysis cannot fully resolve).
+	a.seedEntryPoints(allFns, addEntry)
+	a.bfsReachable(cg, allFns, queue, addEntry)
+	return reachable
+}
+
+// seedEntryPoints marks main, init, exported, and method functions as
+// initial entry points.
+func (a *deadCodeAnalyzer) seedEntryPoints(allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
 	for _, fn := range allFns {
 		if fn.Name() == "main" || fn.Name() == "init" {
 			addEntry(fn)
@@ -114,60 +123,63 @@ func (a *deadCodeAnalyzer) buildReachableSet(ctx *Context, allFns map[string]*ss
 			addEntry(fn)
 		}
 	}
+}
 
-	// BFS: use call graph edges if available, otherwise scan SSA instructions.
+// bfsReachable performs the breadth-first traversal of the call graph,
+// falling back to SSA instruction scanning when call graph edges are absent.
+func (a *deadCodeAnalyzer) bfsReachable(cg *callgraph.Graph, allFns map[string]*ssa.Function, queue []*ssa.Function, addEntry func(*ssa.Function)) {
 	for len(queue) > 0 {
 		fn := queue[0]
 		queue = queue[1:]
 
-		// Try the call graph first.
 		if node := cg.Nodes[fn]; node != nil {
-			for _, edge := range node.Out {
-				callee := edge.Callee.Func
-				if _, exists := allFns[callee.String()]; exists {
-					addEntry(callee)
-				}
-			}
+			a.processCallGraphEdges(node, allFns, addEntry)
 			continue
 		}
+		a.scanSSAInstructions(fn, allFns, addEntry)
+	}
+}
 
-		// Fallback: manually scan SSA instructions for call sites.
-		if fn.Blocks == nil {
-			continue
-		}
-		for _, block := range fn.Blocks {
-			for _, instr := range block.Instrs {
-				// Direct calls.
-				if call, ok := instr.(*ssa.Call); ok {
-					callee := call.Common().StaticCallee()
-					if callee != nil {
-						if _, exists := allFns[callee.String()]; exists {
-							addEntry(callee)
-						}
-					}
-				}
-				// Goroutine launches.
-				if goInstr, ok := instr.(*ssa.Go); ok {
-					callee := goInstr.Common().StaticCallee()
-					if callee != nil {
-						if _, exists := allFns[callee.String()]; exists {
-							addEntry(callee)
-						}
-					}
-				}
-				// Deferred calls.
-				if deferInstr, ok := instr.(*ssa.Defer); ok {
-					callee := deferInstr.Common().StaticCallee()
-					if callee != nil {
-						if _, exists := allFns[callee.String()]; exists {
-							addEntry(callee)
-						}
-					}
-				}
-			}
+// processCallGraphEdges visits callees reachable via call graph edges.
+func (a *deadCodeAnalyzer) processCallGraphEdges(node *callgraph.Node, allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
+	for _, edge := range node.Out {
+		callee := edge.Callee.Func
+		if _, exists := allFns[callee.String()]; exists {
+			addEntry(callee)
 		}
 	}
-	return reachable
+}
+
+// scanSSAInstructions scans SSA instructions for direct call sites
+// (calls, goroutine launches, deferred calls).
+func (a *deadCodeAnalyzer) scanSSAInstructions(fn *ssa.Function, allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
+	if fn.Blocks == nil {
+		return
+	}
+	for _, block := range fn.Blocks {
+		for _, instr := range block.Instrs {
+			a.processSSAInstruction(instr, allFns, addEntry)
+		}
+	}
+}
+
+// processSSAInstruction checks a single SSA instruction for call sites.
+func (a *deadCodeAnalyzer) processSSAInstruction(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
+	var callee *ssa.Function
+	switch v := instr.(type) {
+	case *ssa.Call:
+		callee = v.Common().StaticCallee()
+	case *ssa.Go:
+		callee = v.Common().StaticCallee()
+	case *ssa.Defer:
+		callee = v.Common().StaticCallee()
+	}
+	if callee == nil {
+		return
+	}
+	if _, exists := allFns[callee.String()]; exists {
+		addEntry(callee)
+	}
 }
 
 // findDeadFunctions returns functions in allFns that are not in reachable,

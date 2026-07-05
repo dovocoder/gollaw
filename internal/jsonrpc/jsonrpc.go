@@ -3,7 +3,6 @@
 package jsonrpc
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,10 +12,9 @@ import (
 
 // Conn is a JSON-RPC 2.0 connection with Content-Length framing.
 type Conn struct {
-	r       io.Reader
-	w       io.Writer
-	mu      sync.Mutex
-	scanner *bufio.Scanner
+	r io.Reader
+	w io.Writer
+	mu sync.Mutex
 }
 
 // NewConn creates a new JSON-RPC connection wrapping r and w.
