@@ -12,3 +12,4 @@ gollaw
 *.swp
 .gollaw/
 .gollaw.yaml
+dist/

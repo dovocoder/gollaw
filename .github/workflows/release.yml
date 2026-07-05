@@ -76,7 +76,7 @@ jobs:
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
-          echo "VERSION=v${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "Building version v${VERSION}"
 
       - name: Build binary
