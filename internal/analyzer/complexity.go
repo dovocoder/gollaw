@@ -124,69 +124,92 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 	return complexity
 }
 
-//gollaw:keep
 // cognitiveComplexity approximates Cognitive Complexity (SonarSource style).
 func cognitiveComplexity(fn *ast.FuncDecl) int {
-	complexity := 0
-	nesting := 0
+	if fn.Body == nil {
+		return 0
+	}
+	cc := &cognitiveCounter{}
+	cc.walk(fn.Body)
+	return cc.complexity
+}
 
-	var walk func(n ast.Node)
-	walk = func(n ast.Node) {
-		ast.Inspect(n, func(node ast.Node) bool {
-			if node == nil {
-				return false
+// cognitiveCounter tracks complexity and nesting level during the walk.
+type cognitiveCounter struct {
+	complexity int
+	nesting    int
+}
+
+// walk recursively inspects a node, accumulating cognitive complexity.
+func (c *cognitiveCounter) walk(n ast.Node) {
+	ast.Inspect(n, func(node ast.Node) bool {
+		if node == nil {
+			return false
+		}
+		switch s := node.(type) {
+		case *ast.IfStmt:
+			c.walkIfStmt(s)
+			return false
+		case *ast.ForStmt, *ast.RangeStmt:
+			c.walkLoopStmt(s)
+			return false
+		case *ast.SwitchStmt:
+			c.walkSwitchStmt(s)
+			return false
+		case *ast.BinaryExpr:
+			if s.Op == token.LAND || s.Op == token.LOR {
+				c.complexity++
 			}
-			switch s := node.(type) {
-			case *ast.IfStmt:
-				complexity += 1 + nesting
-				nesting++
-				walk(s.Body)
-				if s.Else != nil {
-					if _, ok := s.Else.(*ast.BlockStmt); ok {
-						complexity += 1 + nesting
-					}
-					walk(s.Else)
-				}
-				nesting--
-				return false
-			case *ast.ForStmt, *ast.RangeStmt:
-				complexity += 1 + nesting
-				nesting++
-				ast.Inspect(s, func(inner ast.Node) bool {
-					if inner == s {
-						return true
-					}
-					walk(inner)
-					return false
-				})
-				nesting--
-				return false
-			case *ast.SwitchStmt:
-				complexity += 1 + nesting
-				nesting++
-				for _, stmt := range s.Body.List {
-					if clause, ok := stmt.(*ast.CaseClause); ok {
-						complexity += len(clause.List)
-					}
-					for _, c := range stmt.(*ast.CaseClause).Body {
-						walk(c)
-					}
-				}
-				nesting--
-				return false
-			case *ast.BinaryExpr:
-				if s.Op == token.LAND || s.Op == token.LOR {
-					complexity++
-				}
-			}
+		}
+		return true
+	})
+}
+
+// walkIfStmt handles the cognitive complexity rules for if statements,
+// including else-if chains and bare else blocks.
+func (c *cognitiveCounter) walkIfStmt(s *ast.IfStmt) {
+	c.complexity += 1 + c.nesting
+	c.nesting++
+	c.walk(s.Body)
+	if s.Else != nil {
+		if _, ok := s.Else.(*ast.BlockStmt); ok {
+			c.complexity += 1 + c.nesting
+		}
+		c.walk(s.Else)
+	}
+	c.nesting--
+}
+
+// walkLoopStmt handles for and range statements. The loop body is walked
+// with an incremented nesting level, while the loop header itself does not
+// contribute additional nesting.
+func (c *cognitiveCounter) walkLoopStmt(s ast.Node) {
+	c.complexity += 1 + c.nesting
+	c.nesting++
+	ast.Inspect(s, func(inner ast.Node) bool {
+		if inner == s {
 			return true
-		})
-	}
+		}
+		c.walk(inner)
+		return false
+	})
+	c.nesting--
+}
 
-	if fn.Body != nil {
-		walk(fn.Body)
+// walkSwitchStmt handles switch statements, adding complexity for the
+// switch itself plus one per case clause value.
+func (c *cognitiveCounter) walkSwitchStmt(s *ast.SwitchStmt) {
+	c.complexity += 1 + c.nesting
+	c.nesting++
+	for _, stmt := range s.Body.List {
+		if clause, ok := stmt.(*ast.CaseClause); ok {
+			c.complexity += len(clause.List)
+		}
+		for _, bodyStmt := range stmt.(*ast.CaseClause).Body {
+			c.walk(bodyStmt)
+		}
 	}
-	return complexity
+	c.nesting--
 }
 
 func severityForComplexity(val, max int) Severity {

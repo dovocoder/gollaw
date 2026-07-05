@@ -7,7 +7,6 @@ import (
 )
 
 // ClosureResult holds the output of transitive impact analysis on changed files.
-//gollaw:keep
 type ClosureResult struct {
 	// InDiff are changed files that are part of the diff/PR.
 	InDiff []string
@@ -20,7 +19,6 @@ type ClosureResult struct {
 
 // CoordinationGap represents a single coordination risk between a changed
 // file and a consumer file that is not part of the diff.
-//gollaw:keep
 type CoordinationGap struct {
 	ChangedFile      string
 	ConsumerFile     string
@@ -34,7 +32,6 @@ type CoordinationGap struct {
 // partitions the reached files into those already in the diff and those
 // affected but not shown. Coordination gaps surface exported symbols from
 // changed packages that are consumed by packages outside the diff.
-//gollaw:keep
 func ImpactClosure(graph *ModuleGraph, changedFiles []string) *ClosureResult {
 	result := &ClosureResult{
 		InDiff:           changedFiles,

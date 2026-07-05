@@ -3,14 +3,13 @@ package graph
 import "sort"
 
 // ReachabilityResult holds the output of BFS reachability analysis.
-//gollaw:keep
 type ReachabilityResult struct {
 	Reachable   []string
 	Unreachable []string
 	EntryPoints []string
 }
 
-// ComputeReachability performs a BFS from the given entry points through
+// computeReachability performs a BFS from the given entry points through
 // forward edges (imports) to determine which packages are reachable.
 //
 // Packages not reachable from any entry point are flagged as unreachable —
@@ -19,7 +18,7 @@ type ReachabilityResult struct {
 // Entry points typically include main packages, packages with exported
 // symbols used by external importers, and test packages.
 //gollaw:keep
-func ComputeReachability(graph *ModuleGraph, entryPoints []string) *ReachabilityResult {
+func computeReachability(graph *ModuleGraph, entryPoints []string) *ReachabilityResult {
 	result := &ReachabilityResult{
 		EntryPoints: append([]string(nil), entryPoints...),
 	}
