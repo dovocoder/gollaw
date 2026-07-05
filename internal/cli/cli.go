@@ -230,19 +230,24 @@ func (o *analyzeOpts) parseOneFlag(args []string, i *int, arg string) (bool, boo
 
 // parseStringFlag handles string-valued flags.
 func (o *analyzeOpts) parseStringFlag(args []string, i *int, arg string) (string, bool) {
-	flags := []struct{ sep, short, long string }{
-		{"--analyzers=", "-a", "--analyzers"},
-		{"--rule=", "", "--rule"},
-		{"--min-severity=", "", "--min-severity"},
-		{"--dir=", "", "--dir"},
+	// Check -a shorthand first
+	if val, ok := parseFlagValue(args, i, "-a"); ok {
+		o.analyzerList = val
+		return val, true
+	}
+	flags := []struct{ sep, long string }{
+		{"--analyzers=", "--analyzers"},
+		{"--rule=", "--rule"},
+		{"--min-severity=", "--min-severity"},
+		{"--dir=", "--dir"},
 	}
 	for _, f := range flags {
-		if f.short != "" {
-			if val, ok := parseFlagValue(args, i, f.short, f.long); ok {
-				o.assignString(f.long, val)
-				return val, true
-			}
+		// Check --flag value (space-separated)
+		if val, ok := parseFlagValue(args, i, f.long); ok {
+			o.assignString(f.long, val)
+			return val, true
 		}
+		// Check --flag=value (equals-separated)
 		if val, ok := parseFlagEquals(arg, f.sep); ok {
 			o.assignString(f.long, val)
 			return val, true
