@@ -182,8 +182,13 @@ func (a *securityAnalyzer) checkUnsafeUsage(ctx *Context, file *ast.File) []Find
 }
 
 // checkSQLInjection detects SQL queries built via fmt.Sprintf.
+// It only flags fmt.Sprintf calls whose result is used in a database
+// query context (db.Query, db.Exec, db.QueryRow, etc.), not when the
+// result is used in error messages or logging.
 func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Finding {
 	var findings []Finding
+	// Track parent call expressions during traversal to detect error/log context.
+	var callStack []*ast.CallExpr
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -191,22 +196,33 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Fin
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
+			// Track non-selector calls (e.g. emitWarning) for context detection
+			callStack = append(callStack, call)
 			return true
 		}
 		ident, ok := sel.X.(*ast.Ident)
 		if !ok || ident.Name != "fmt" {
+			callStack = append(callStack, call)
 			return true
 		}
 		if sel.Sel.Name != "Sprintf" {
+			callStack = append(callStack, call)
 			return true
 		}
 		if len(call.Args) == 0 {
+			callStack = append(callStack, call)
 			return true
 		}
 		// Check if first arg is a string containing SQL keywords.
 		if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == 9 {
 			val := strings.ToLower(lit.Value)
 			if containsAny(val, "select ", "insert ", "update ", "delete ", "drop ", "create table", "where ") {
+				// Skip if the fmt.Sprintf result is used in an error message
+				// (fmt.Errorf, errors.Errorf, errors.Wrap) or logging context.
+				if isInErrorOrLogContext(callStack) {
+					callStack = append(callStack, call)
+					return true
+				}
 				pos := ctx.FSET.Position(call.Pos())
 				findings = append(findings, Finding{
 					Analyzer:   a.Name(),
@@ -220,9 +236,53 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Fin
 				})
 			}
 		}
+		callStack = append(callStack, call)
 		return true
 	})
 	return findings
+}
+
+// isInErrorOrLogContext checks if the current call is nested inside an
+// error-formatting or logging function call.
+func isInErrorOrLogContext(callStack []*ast.CallExpr) bool {
+	// The fmt.Sprintf call is the last item on the stack (not yet pushed).
+	// Check the parent call (second-to-last on the stack).
+	if len(callStack) == 0 {
+		return false
+	}
+	parent := callStack[len(callStack)-1]
+	if sel, ok := parent.Fun.(*ast.SelectorExpr); ok {
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			pkgName := ident.Name
+			funcName := sel.Sel.Name
+			// fmt.Errorf, errors.Wrap, errors.Wrapf, errors.Errorf, errors.New
+			if (pkgName == "fmt" && funcName == "Errorf") ||
+				(pkgName == "errors" && (funcName == "Wrap" || funcName == "Wrapf" || funcName == "Errorf" || funcName == "New")) {
+				return true
+			}
+			// log.Printf, logger.Error/Errorf/Warn/Warnf
+			if pkgName == "log" || pkgName == "logger" || pkgName == "slog" {
+				return true
+			}
+		}
+		// Method calls: a.emitWarning, a.emitError, a.logger.Warn, etc.
+		// Check the selector name for error/warning patterns.
+		funcName := sel.Sel.Name
+		if strings.Contains(strings.ToLower(funcName), "emit") ||
+			strings.Contains(strings.ToLower(funcName), "warn") ||
+			strings.Contains(funcName, "Error") || strings.Contains(funcName, "error") {
+			return true
+		}
+	}
+	// Also check for bare function calls: emitWarning, emitError, etc.
+	if ident, ok := parent.Fun.(*ast.Ident); ok {
+		name := ident.Name
+		if strings.Contains(name, "emit") || strings.Contains(name, "warn") ||
+			strings.Contains(name, "Error") || strings.Contains(name, "error") {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAny(s string, substrs ...string) bool {

@@ -41,15 +41,19 @@ func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	return a.createFindings(ctx, deadFns), nil
 }
 
-// collectAllFunctions gathers all non-test, non-init, non-main functions
-// from the target packages (not dependencies).
+// collectAllFunctions gathers all non-test functions from the target
+// packages (not dependencies). main and init are included so they can
+// serve as BFS entry points — they are filtered from findings later.
 func (a *deadCodeAnalyzer) collectAllFunctions(ssaByPkg map[string]*ssa.Package) map[string]*ssa.Function {
 	allFns := make(map[string]*ssa.Function)
 	collect := func(fn *ssa.Function) {
-		if fn == nil || fn.Name() == "" || fn.Syntax() == nil {
+		if fn == nil || fn.Name() == "" {
 			return
 		}
-		if fn.Name() == "init" || fn.Name() == "main" {
+		// Skip synthetic functions except init — init is synthetic but
+		// contains the package-level initializer code that references
+		// function values (e.g. migration tables, cobra AddCommand).
+		if fn.Syntax() == nil && fn.Name() != "init" {
 			return
 		}
 		if isTestFunction(fn) {
@@ -161,15 +165,56 @@ func (a *deadCodeAnalyzer) scanSSAInstructions(fn *ssa.Function, allFns map[stri
 	}
 }
 
-// processInstruction checks a single SSA instruction for static calls
-// and closure creation.
+// processInstruction checks a single SSA instruction for static calls,
+// closure creation, and function values stored in variables/structs.
 func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
 	if callee := extractStaticCallee(instr); callee != nil {
+		// Check both the callee itself and its origin (for generic instantiations).
 		if _, exists := allFns[callee.String()]; exists {
 			addEntry(callee)
+		} else if origin := callee.Origin(); origin != nil {
+			if _, exists := allFns[origin.String()]; exists {
+				addEntry(origin)
+			}
 		}
 	}
 	a.scanClosure(instr, allFns, addEntry, visited)
+	a.scanFunctionValues(instr, allFns, addEntry)
+}
+
+// scanFunctionValues checks for function values referenced in Store,
+// ChangeInterface, and other instructions that don't involve a direct
+// call. This catches patterns like:
+//
+//	var migrations = []migration{{up: migrateFoo}}
+//	rootCmd.AddCommand(newFooCmd())
+//
+// where the function is referenced as a value, not called directly.
+func (a *deadCodeAnalyzer) scanFunctionValues(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
+	// Check Store instructions: *t = someFunction
+	if store, ok := instr.(*ssa.Store); ok {
+		if fn, ok := store.Val.(*ssa.Function); ok {
+			if _, exists := allFns[fn.String()]; exists {
+				addEntry(fn)
+			}
+		}
+	}
+	// Check ChangeInterface instructions (function → interface{})
+	if ci, ok := instr.(*ssa.ChangeInterface); ok {
+		if fn, ok := ci.X.(*ssa.Function); ok {
+			if _, exists := allFns[fn.String()]; exists {
+				addEntry(fn)
+			}
+		}
+	}
+	// Check MakeInterface instructions (function → interface{})
+	if mi, ok := instr.(*ssa.MakeInterface); ok {
+		if fn, ok := mi.X.(*ssa.Function); ok {
+			if _, exists := allFns[fn.String()]; exists {
+				addEntry(fn)
+			}
+		}
+	}
 }
 
 // scanClosure checks if an instruction creates a closure and, if so,
@@ -206,11 +251,15 @@ func extractStaticCallee(instr ssa.Instruction) *ssa.Function {
 }
 
 // findDeadFunctions returns functions in allFns that are not in reachable,
-// sorted by position.
+// sorted by position. main and init are never reported as dead.
 func (a *deadCodeAnalyzer) findDeadFunctions(allFns map[string]*ssa.Function, reachable map[string]bool) []*ssa.Function {
 	var deadFns []*ssa.Function
 	for key, fn := range allFns {
 		if !reachable[key] {
+			// Never report main or init as dead — they are program entry points.
+			if fn.Name() == "main" || fn.Name() == "init" {
+				continue
+			}
 			deadFns = append(deadFns, fn)
 		}
 	}
