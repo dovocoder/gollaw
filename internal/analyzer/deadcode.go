@@ -178,6 +178,18 @@ func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[
 			}
 		}
 	}
+	// Check for function values passed as call arguments (e.g.,
+	// defaultStoreDirFor(..., pathExists)). The SSA represents this as
+	// a Call instruction whose arguments include *ssa.Function values.
+	if call, ok := instr.(*ssa.Call); ok {
+		for _, arg := range call.Common().Args {
+			if fn, ok := arg.(*ssa.Function); ok {
+				if _, exists := allFns[fn.String()]; exists {
+					addEntry(fn)
+				}
+			}
+		}
+	}
 	a.scanClosure(instr, allFns, addEntry, visited)
 	a.scanFunctionValues(instr, allFns, addEntry)
 }

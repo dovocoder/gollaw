@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"go/types"
+	"strings"
 )
 
 // unusedMembersAnalyzer finds unused struct fields and interface methods with no implementations.
@@ -205,6 +206,37 @@ func countImplementations(ctx *Context, methodName string) int {
 				if named.Method(i).Name() == methodName {
 					count++
 					break
+				}
+			}
+		}
+	}
+	// Also check test packages — interfaces are often implemented only
+	// in tests (mocks/fakes). If we found implementations in test packages,
+	// the interface is not unused.
+	if count == 0 {
+		for _, pkg := range ctx.Packages {
+			if pkg.TypesInfo == nil {
+				continue
+			}
+			// Check if this is a test package
+			if !strings.HasSuffix(pkg.PkgPath, "_test") {
+				continue
+			}
+			scope := pkg.Types.Scope()
+			for _, name := range scope.Names() {
+				obj := scope.Lookup(name)
+				named, ok := obj.Type().(*types.Named)
+				if !ok {
+					continue
+				}
+				if _, ok := named.Underlying().(*types.Interface); ok {
+					continue
+				}
+				for i := 0; i < named.NumMethods(); i++ {
+					if named.Method(i).Name() == methodName {
+						count++
+						break
+					}
 				}
 			}
 		}
