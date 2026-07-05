@@ -97,9 +97,40 @@ func (a *churnAnalyzer) buildChurnFindings(modDir string, fileCommits map[string
 		if count < 10 {
 			continue
 		}
+		// Skip non-source files — churn in docs, configs, changelogs, and
+		// lock files is expected and not actionable.
+		if isNonSourceFile(file) {
+			continue
+		}
 		findings = append(findings, a.createChurnFinding(modDir, file, count, maxCommits))
 	}
 	return findings
+}
+
+// isNonSourceFile returns true for files that are not source code and whose
+// churn is expected (docs, configs, changelogs, lock files, etc.).
+func isNonSourceFile(file string) bool {
+	ext := filepath.Ext(file)
+	switch ext {
+	case ".md", ".txt", ".rst":
+		return true
+	case ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg":
+		return true
+	case ".sum", ".lock":
+		return true
+	}
+	// Check specific filenames
+	switch filepath.Base(file) {
+	case "CHANGELOG.md", "README.md", "LICENSE", "Makefile",
+		"package.json", "package-lock.json", "go.sum", "go.mod",
+		".gitignore", ".gitattributes", "Dockerfile", "docker-compose.yml":
+		return true
+	}
+	// Check directories
+	if strings.Contains(file, "docs/") || strings.Contains(file, ".github/") {
+		return true
+	}
+	return false
 }
 
 // createChurnFinding builds a single churn finding for a high-churn file.
