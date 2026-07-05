@@ -93,9 +93,9 @@ jobs:
           fi
           go build -trimpath -ldflags="-s -w -X github.com/dovocoder/gollaw/internal/cli.Version=${VERSION} -X github.com/dovocoder/gollaw/internal/action.actionVersion=${VERSION}" -o "dist/${BINARY_NAME}" .
           cd dist && tar czf "gollaw-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "${BINARY_NAME}"
-          # Also create zip for Windows convenience
+          # Also create zip for Windows convenience (use PowerShell since 'zip' CLI is not available)
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip "gollaw-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.zip" "${BINARY_NAME}"
+            powershell -Command "Compress-Archive -Path '${BINARY_NAME}' -DestinationPath 'gollaw-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.zip'"
           fi
           ls -lh
 
