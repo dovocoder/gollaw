@@ -447,20 +447,64 @@ func detectThinWrapper(stmts []ast.Stmt) (string, bool) {
 }
 
 // detectSingleStmtWrapper checks a single statement for a wrapping call.
+// Returns ("", false) if the call arguments contain function literals
+// (closures) or nested calls — those are composition, not thin wrappers.
 func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
 		if len(s.Results) == 1 {
 			if call, ok := s.Results[0].(*ast.CallExpr); ok {
+				if hasComplexArgs(call) {
+					return "", false
+				}
 				return callExprName(call), true
 			}
 		}
 	case *ast.ExprStmt:
 		if call, ok := s.X.(*ast.CallExpr); ok {
+			if hasComplexArgs(call) {
+				return "", false
+			}
 			return callExprName(call), true
 		}
 	}
 	return "", false
+}
+
+// hasComplexArgs returns true if any argument of the call is a function
+// literal (closure) or a nested call expression. A function that wraps
+// a call with complex arguments is composing operations, not thin-wrapping.
+func hasComplexArgs(call *ast.CallExpr) bool {
+	for _, arg := range call.Args {
+		if hasNestedComplexity(arg) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNestedComplexity checks if an expression contains a function literal
+// or a nested call expression.
+func hasNestedComplexity(expr ast.Expr) bool {
+	complex := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if complex {
+			return false
+		}
+		switch n.(type) {
+		case *ast.FuncLit:
+			// Function literal (closure) as argument — not thin
+			complex = true
+			return false
+		case *ast.CallExpr:
+			// Nested call as argument — e.g., strings.ToLower(strings.TrimSpace(s))
+			// This means the function is composing multiple operations.
+			complex = true
+			return false
+		}
+		return true
+	})
+	return complex
 }
 
 // detectCallPlusReturnWrapper checks a 2-statement body: call + return.
