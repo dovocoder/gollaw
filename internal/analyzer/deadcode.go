@@ -157,23 +157,39 @@ func (a *deadCodeAnalyzer) scanSSAInstructions(fn *ssa.Function, allFns map[stri
 	}
 	for _, block := range fn.Blocks {
 		for _, instr := range block.Instrs {
-			if callee := extractStaticCallee(instr); callee != nil {
-				if _, exists := allFns[callee.String()]; exists {
-					addEntry(callee)
-				}
-			}
-			if mc, ok := instr.(*ssa.MakeClosure); ok {
-				if closureFn, ok := mc.Fn.(*ssa.Function); ok {
-					closureKey := closureFn.String()
-					if visited[closureKey] {
-						continue
-					}
-					visited[closureKey] = true
-					a.scanSSAInstructions(closureFn, allFns, addEntry, visited)
-				}
-			}
+			a.processInstruction(instr, allFns, addEntry, visited)
 		}
 	}
+}
+
+// processInstruction checks a single SSA instruction for static calls
+// and closure creation.
+func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
+	if callee := extractStaticCallee(instr); callee != nil {
+		if _, exists := allFns[callee.String()]; exists {
+			addEntry(callee)
+		}
+	}
+	a.scanClosure(instr, allFns, addEntry, visited)
+}
+
+// scanClosure checks if an instruction creates a closure and, if so,
+// recursively scans the closure's body for more call sites.
+func (a *deadCodeAnalyzer) scanClosure(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
+	mc, ok := instr.(*ssa.MakeClosure)
+	if !ok {
+		return
+	}
+	closureFn, ok := mc.Fn.(*ssa.Function)
+	if !ok {
+		return
+	}
+	closureKey := closureFn.String()
+	if visited[closureKey] {
+		return
+	}
+	visited[closureKey] = true
+	a.scanSSAInstructions(closureFn, allFns, addEntry, visited)
 }
 
 // extractStaticCallee returns the statically-known callee function from a

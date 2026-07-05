@@ -8,6 +8,7 @@ import (
 )
 
 // ModuleGraph is the dependency graph of Go packages in a codebase.
+//gollaw:ignore api-surface
 type ModuleGraph struct {
 	// Nodes holds one node per Go package, indexed by node ID.
 	Nodes []moduleNode
@@ -49,7 +50,14 @@ func BuildGraph(ctx *analyzer.Context) *ModuleGraph {
 		return g
 	}
 
-	// Create nodes — one per package.
+	buildNodes(ctx, g)
+	buildEdges(ctx, g)
+
+	return g
+}
+
+// buildNodes creates one node per package in the graph.
+func buildNodes(ctx *analyzer.Context, g *ModuleGraph) {
 	for _, pkg := range ctx.Packages {
 		if pkg == nil || pkg.PkgPath == "" {
 			continue
@@ -71,8 +79,10 @@ func BuildGraph(ctx *analyzer.Context) *ModuleGraph {
 		g.Nodes = append(g.Nodes, node)
 		g.pathIndex[pkg.PkgPath] = id
 	}
+}
 
-	// Create edges — one per import relationship.
+// buildEdges creates import relationship edges between nodes.
+func buildEdges(ctx *analyzer.Context, g *ModuleGraph) {
 	for _, pkg := range ctx.Packages {
 		if pkg == nil || pkg.PkgPath == "" {
 			continue
@@ -100,8 +110,6 @@ func BuildGraph(ctx *analyzer.Context) *ModuleGraph {
 			g.reverseDeps[impPath] = appendUniqueInt(g.reverseDeps[impPath], srcID)
 		}
 	}
-
-	return g
 }
 
 // NodeByPath returns the node ID for a package path, or -1 if not found.

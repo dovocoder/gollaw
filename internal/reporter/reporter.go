@@ -393,7 +393,7 @@ type markdownReporter struct{}
 func (r *markdownReporter) Format() string { return "markdown" }
 
 func (r *markdownReporter) Write(w io.Writer, report *Report) error {
-	data, err := FormatMarkdown(report)
+	data, err := formatMarkdown(report)
 	if err != nil {
 		return err
 	}

@@ -6,34 +6,34 @@ import (
 	"strings"
 )
 
-// ClosureResult holds the output of transitive impact analysis on changed files.
-type ClosureResult struct {
+// closureResult holds the output of transitive impact analysis on changed files.
+type closureResult struct {
 	// InDiff are changed files that are part of the diff/PR.
 	InDiff []string
 	// AffectedNotShown are files transitively affected but not in the diff.
 	AffectedNotShown []string
-	// CoordinationGaps are cases where a changed package exports symbols
+	// coordinationGaps are cases where a changed package exports symbols
 	// consumed by a package NOT in the diff — a coordination risk.
-	CoordinationGaps []CoordinationGap
+	coordinationGaps []coordinationGap
 }
 
-// CoordinationGap represents a single coordination risk between a changed
+// coordinationGap represents a single coordination risk between a changed
 // file and a consumer file that is not part of the diff.
-type CoordinationGap struct {
+type coordinationGap struct {
 	ChangedFile      string
 	ConsumerFile     string
 	ConsumedSymbols   []string
 }
 
-// ImpactClosure computes the transitive impact of changedFiles on the graph.
+// impactClosure computes the transitive impact of changedFiles on the graph.
 //
 // It maps changed files to their containing packages, walks reverse
 // dependencies transitively (who imports the changed packages), and
 // partitions the reached files into those already in the diff and those
 // affected but not shown. Coordination gaps surface exported symbols from
 // changed packages that are consumed by packages outside the diff.
-func ImpactClosure(graph *ModuleGraph, changedFiles []string) *ClosureResult {
-	result := &ClosureResult{
+func impactClosure(graph *ModuleGraph, changedFiles []string) *closureResult {
+	result := &closureResult{
 		InDiff:           changedFiles,
 	}
 
@@ -55,6 +55,33 @@ func ImpactClosure(graph *ModuleGraph, changedFiles []string) *ClosureResult {
 	}
 
 	// Transitively walk reverse deps (who imports changed packages).
+	affected := computeAffected(graph, changedPkgs)
+
+	// Partition reached files: those in the diff vs affected but not shown.
+	for pkgPath := range affected {
+		pkgID := graph.NodeByPath(pkgPath)
+		if pkgID < 0 {
+			continue
+		}
+		for _, f := range graph.Nodes[pkgID].Files {
+			base := filepath.Base(f)
+			if changedSet[base] || changedSet[f] {
+				continue // already in diff
+			}
+			result.AffectedNotShown = append(result.AffectedNotShown, f)
+		}
+	}
+	sort.Strings(result.AffectedNotShown)
+
+	// Find coordination gaps.
+	result.coordinationGaps = findCoordinationGaps(graph, changedPkgs, changedSet)
+
+	return result
+}
+
+// computeAffected transitively walks reverse dependencies to find all
+// packages affected by changes to changedPkgs.
+func computeAffected(graph *ModuleGraph, changedPkgs map[string]bool) map[string]bool {
 	affected := make(map[string]bool)
 	visited := make(map[string]bool)
 	queue := make([]string, 0, len(changedPkgs))
@@ -75,25 +102,14 @@ func ImpactClosure(graph *ModuleGraph, changedFiles []string) *ClosureResult {
 			queue = append(queue, importerPath)
 		}
 	}
+	return affected
+}
 
-	// Partition reached files: those in the diff vs affected but not shown.
-	for pkgPath := range affected {
-		pkgID := graph.NodeByPath(pkgPath)
-		if pkgID < 0 {
-			continue
-		}
-		for _, f := range graph.Nodes[pkgID].Files {
-			base := filepath.Base(f)
-			if changedSet[base] || changedSet[f] {
-				continue // already in diff
-			}
-			result.AffectedNotShown = append(result.AffectedNotShown, f)
-		}
-	}
-	sort.Strings(result.AffectedNotShown)
-
-	// Find coordination gaps: changed package exports symbols consumed
-	// by a package NOT in the diff.
+// findCoordinationGaps finds cases where a changed package exports symbols
+// consumed by a package NOT in the diff.
+func findCoordinationGaps(graph *ModuleGraph, changedPkgs, changedSet map[string]bool) []coordinationGap {
+	_ = changedSet // reserved for file-level diff checks
+	var gaps []coordinationGap
 	for changedPkg := range changedPkgs {
 		changedID := graph.NodeByPath(changedPkg)
 		if changedID < 0 {
@@ -120,15 +136,14 @@ func ImpactClosure(graph *ModuleGraph, changedFiles []string) *ClosureResult {
 			if len(symbols) == 0 {
 				symbols = []string{"*"}
 			}
-			result.CoordinationGaps = append(result.CoordinationGaps, CoordinationGap{
+			gaps = append(gaps, coordinationGap{
 				ChangedFile:     changedFile,
 				ConsumerFile:    consumerFile,
 				ConsumedSymbols:  append([]string(nil), symbols...),
 			})
 		}
 	}
-
-	return result
+	return gaps
 }
 
 // changedFileToPackages maps changed file paths to package paths in the graph.

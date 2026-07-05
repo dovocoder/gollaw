@@ -69,70 +69,79 @@ func ParseSuppressions(fset *token.FileSet, files []*ast.File) (*Suppressions, e
 			commentByLine[pos.Line] = cg
 		}
 
-		// Process comments for file-level ignore-all.
-		for _, cg := range file.Comments {
-			for _, c := range cg.List {
-				text := strings.TrimSpace(c.Text)
-				if text == prefixIgnoreAll {
-					fileName := fset.Position(c.Pos()).Filename
-					sup.fileIgnoreAll[fileName] = true
-					pos := fset.Position(c.Pos())
-					sup.entries = append(sup.entries, suppressionEntry{
-						File:     fileName,
-						Line:     pos.Line,
-						DeclLine: 0,
-						Type:     "ignore-all",
-						Text:     text,
-					})
-				}
-			}
-		}
-
-		// Walk declarations to find suppression comments above them.
-		// Also handle the file's package-level doc comment.
-		if file.Doc != nil {
-			sup.parseDeclComment(fset, file.Doc, file.Pos())
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch decl := n.(type) {
-			case *ast.GenDecl:
-				// For gen declarations (var, const, type), check doc comment
-				if decl.Doc != nil {
-					sup.parseDeclComment(fset, decl.Doc, decl.Pos())
-				}
-				// Also check individual specs
-				for _, spec := range decl.Specs {
-					if vs, ok := spec.(*ast.ValueSpec); ok && vs.Doc != nil {
-						sup.parseDeclComment(fset, vs.Doc, vs.Pos())
-					}
-					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Doc != nil {
-						sup.parseDeclComment(fset, ts.Doc, ts.Pos())
-					}
-				}
-			case *ast.FuncDecl:
-				if decl.Doc != nil {
-					sup.parseDeclComment(fset, decl.Doc, decl.Pos())
-				}
-			}
-			return true
-		})
-
-		// Also scan for inline suppression comments on the same line as a declaration.
-		// These apply to the declaration on the next line or same line.
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch decl := n.(type) {
-			case *ast.FuncDecl:
-				sup.checkInlineComment(fset, file, decl.Pos(), commentByLine)
-			case *ast.GenDecl:
-				for _, spec := range decl.Specs {
-					sup.checkInlineComment(fset, file, spec.Pos(), commentByLine)
-				}
-			}
-			return true
-		})
+		processFileLevelComments(fset, file, sup)
+		processDeclComments(fset, file, sup, commentByLine)
 	}
 
 	return sup, nil
+}
+
+// processFileLevelComments scans file comments for file-level ignore-all directives.
+func processFileLevelComments(fset *token.FileSet, file *ast.File, sup *Suppressions) {
+	for _, cg := range file.Comments {
+		for _, c := range cg.List {
+			text := strings.TrimSpace(c.Text)
+			if text == prefixIgnoreAll {
+				fileName := fset.Position(c.Pos()).Filename
+				sup.fileIgnoreAll[fileName] = true
+				pos := fset.Position(c.Pos())
+				sup.entries = append(sup.entries, suppressionEntry{
+					File:     fileName,
+					Line:     pos.Line,
+					DeclLine: 0,
+					Type:     "ignore-all",
+					Text:     text,
+				})
+			}
+		}
+	}
+}
+
+// processDeclComments walks declarations to find suppression comments above them
+// and scans for inline suppression comments.
+func processDeclComments(fset *token.FileSet, file *ast.File, sup *Suppressions, commentByLine map[int]*ast.CommentGroup) {
+	// Walk declarations to find suppression comments above them.
+	// Also handle the file's package-level doc comment.
+	if file.Doc != nil {
+		sup.parseDeclComment(fset, file.Doc, file.Pos())
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch decl := n.(type) {
+		case *ast.GenDecl:
+			// For gen declarations (var, const, type), check doc comment
+			if decl.Doc != nil {
+				sup.parseDeclComment(fset, decl.Doc, decl.Pos())
+			}
+			// Also check individual specs
+			for _, spec := range decl.Specs {
+				if vs, ok := spec.(*ast.ValueSpec); ok && vs.Doc != nil {
+					sup.parseDeclComment(fset, vs.Doc, vs.Pos())
+				}
+				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Doc != nil {
+					sup.parseDeclComment(fset, ts.Doc, ts.Pos())
+				}
+			}
+		case *ast.FuncDecl:
+			if decl.Doc != nil {
+				sup.parseDeclComment(fset, decl.Doc, decl.Pos())
+			}
+		}
+		return true
+	})
+
+	// Also scan for inline suppression comments on the same line as a declaration.
+	// These apply to the declaration on the next line or same line.
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch decl := n.(type) {
+		case *ast.FuncDecl:
+			sup.checkInlineComment(fset, file, decl.Pos(), commentByLine)
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				sup.checkInlineComment(fset, file, spec.Pos(), commentByLine)
+			}
+		}
+		return true
+	})
 }
 
 // Entries returns all parsed suppression entries.
@@ -275,85 +284,77 @@ func FindStale(findings []analyzer.Finding, sup *Suppressions) []staleSuppressio
 		return nil
 	}
 
-	// Build a quick lookup: (file, line) → set of analyzers with findings.
-	type findingKey struct {
-		file     string
-		line     int
-		analyzer string
-	}
-	findingSet := make(map[findingKey]bool)
-	for _, f := range findings {
-		// For per-declaration suppressions, match against the decl line.
-		// Since findings report their own line (which may differ from the decl
-		// line), we check all entries for the same file.
-		findingSet[findingKey{f.File, f.Line, f.Analyzer}] = true
-	}
-
 	var stale []staleSuppression
 	for _, entry := range sup.entries {
-		if entry.Type == "ignore-all" {
-			// File-level: stale if the file has no findings at all.
-			hasFinding := false
-			for _, f := range findings {
-				if f.File == entry.File {
-					hasFinding = true
-					break
-				}
-			}
-			if !hasFinding {
-				stale = append(stale, staleSuppression{
-					File:     entry.File,
-					Line:     entry.Line,
-					DeclLine: 0,
-					Type:     entry.Type,
-					Message:  fmt.Sprintf("file-level ignore-all at %s:%d has no findings to suppress", entry.File, entry.Line),
-				})
-			}
+		if !checkStaleEntry(entry, findings) {
 			continue
 		}
-
-		// Per-declaration: check if any finding matches.
-		matched := false
-		for _, f := range findings {
-			if f.File != entry.File {
-				continue
-			}
-			if !matchesDecl(f.Line, entry.DeclLine) {
-				continue
-			}
-			if entry.Type == "keep" {
-				// "keep" suppresses deadcode and unused
-				if f.Analyzer == "deadcode" || f.Analyzer == "unused" {
-					matched = true
-					break
-				}
-			} else if entry.Type == "ignore" {
-				if f.Analyzer == entry.Analyzer {
-					matched = true
-					break
-				}
-			}
-		}
-
-		if !matched {
-			msg := fmt.Sprintf("suppression at %s:%d (type=%s", entry.File, entry.Line, entry.Type)
-			if entry.Analyzer != "" {
-				msg += fmt.Sprintf(", analyzer=%s", entry.Analyzer)
-			}
-			if entry.DeclLine > 0 {
-				msg += fmt.Sprintf(", declLine=%d", entry.DeclLine)
-			}
-			msg += ") no longer matches any finding"
-			stale = append(stale, staleSuppression{
-				File:     entry.File,
-				Line:     entry.Line,
-				DeclLine: entry.DeclLine,
-				Type:     entry.Type,
-				Analyzer: entry.Analyzer,
-				Message:  msg,
-			})
-		}
+		stale = append(stale, staleSuppression{
+			File:     entry.File,
+			Line:     entry.Line,
+			DeclLine: entry.DeclLine,
+			Type:     entry.Type,
+			Analyzer: entry.Analyzer,
+			Message:  staleMsg(entry),
+		})
 	}
 
 	return stale
+}
+
+// checkStaleEntry returns true if the suppression entry no longer matches
+// any finding.
+func checkStaleEntry(entry suppressionEntry, findings []analyzer.Finding) bool {
+	if entry.Type == "ignore-all" {
+		return !fileHasFindings(entry.File, findings)
+	}
+	return !checkEntryMatch(entry, findings)
+}
+
+// fileHasFindings returns true if any finding belongs to the given file.
+func fileHasFindings(file string, findings []analyzer.Finding) bool {
+	for _, f := range findings {
+		if f.File == file {
+			return true
+		}
+	}
+	return false
+}
+
+// staleMsg builds a human-readable message for a stale suppression entry.
+func staleMsg(entry suppressionEntry) string {
+	if entry.Type == "ignore-all" {
+		return fmt.Sprintf("file-level ignore-all at %s:%d has no findings to suppress", entry.File, entry.Line)
+	}
+	msg := fmt.Sprintf("suppression at %s:%d (type=%s", entry.File, entry.Line, entry.Type)
+	if entry.Analyzer != "" {
+		msg += fmt.Sprintf(", analyzer=%s", entry.Analyzer)
+	}
+	if entry.DeclLine > 0 {
+		msg += fmt.Sprintf(", declLine=%d", entry.DeclLine)
+	}
+	return msg + ") no longer matches any finding"
+}
+
+// checkEntryMatch returns true if any finding matches the suppression entry.
+func checkEntryMatch(entry suppressionEntry, findings []analyzer.Finding) bool {
+	for _, f := range findings {
+		if f.File != entry.File {
+			continue
+		}
+		if !matchesDecl(f.Line, entry.DeclLine) {
+			continue
+		}
+		if entry.Type == "keep" {
+			// "keep" suppresses deadcode and unused
+			if f.Analyzer == "deadcode" || f.Analyzer == "unused" {
+				return true
+			}
+		} else if entry.Type == "ignore" {
+			if f.Analyzer == entry.Analyzer {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -2,8 +2,8 @@ package graph
 
 import "sort"
 
-// FanIOStats holds fan-in/fan-out metrics for a single package.
-type FanIOStats struct {
+// fanIOStats holds fan-in/fan-out metrics for a single package.
+type fanIOStats struct {
 	Package       string
 	FanIn         int
 	FanOut        int
@@ -12,8 +12,8 @@ type FanIOStats struct {
 
 // fanIORankingResult holds the top-N most imported packages and top-N importers.
 type fanIORankingResult struct {
-	TopImported  []FanIOStats
-	TopImporters []FanIOStats
+	TopImported  []fanIOStats
+	TopImporters []fanIOStats
 }
 
 // fanIOThresholds configures what counts as "high coupling".
@@ -22,22 +22,22 @@ type fanIOThresholds struct {
 	MaxFanOut int
 }
 
-// DefaultFanIOThresholds are the thresholds used when none are specified.
-var DefaultFanIOThresholds = fanIOThresholds{
+// defaultFanIOThresholds are the thresholds used when none are specified.
+var defaultFanIOThresholds = fanIOThresholds{
 	MaxFanIn:  5,
 	MaxFanOut: 10,
 }
 
-// ComputeFanIOWithThresholds computes fan-in/fan-out with custom thresholds.
-func ComputeFanIOWithThresholds(graph *ModuleGraph, t fanIOThresholds) []FanIOStats {
+// computeFanIOWithThresholds computes fan-in/fan-out with custom thresholds.
+func computeFanIOWithThresholds(graph *ModuleGraph, t fanIOThresholds) []fanIOStats {
 	if graph == nil {
 		return nil
 	}
-	stats := make([]FanIOStats, 0, len(graph.Nodes))
+	stats := make([]fanIOStats, 0, len(graph.Nodes))
 	for _, node := range graph.Nodes {
 		fanIn := len(graph.reverseDeps[node.Path])
 		fanOut := len(graph.forwardDeps[node.Path])
-		stats = append(stats, FanIOStats{
+		stats = append(stats, fanIOStats{
 			Package:        node.Path,
 			FanIn:          fanIn,
 			FanOut:         fanOut,
@@ -55,10 +55,10 @@ func fanIORanking(graph *ModuleGraph) *fanIORankingResult {
 		return ranking
 	}
 
-	all := ComputeFanIOWithThresholds(graph, DefaultFanIOThresholds)
+	all := computeFanIOWithThresholds(graph, defaultFanIOThresholds)
 
 	// Sort by fan-in (most imported first).
-	sortedByIn := make([]FanIOStats, len(all))
+	sortedByIn := make([]fanIOStats, len(all))
 	copy(sortedByIn, all)
 	sort.Slice(sortedByIn, func(i, j int) bool {
 		return sortedByIn[i].FanIn > sortedByIn[j].FanIn
@@ -70,7 +70,7 @@ func fanIORanking(graph *ModuleGraph) *fanIORankingResult {
 	ranking.TopImported = sortedByIn[:limit]
 
 	// Sort by fan-out (most importers first).
-	sortedByOut := make([]FanIOStats, len(all))
+	sortedByOut := make([]fanIOStats, len(all))
 	copy(sortedByOut, all)
 	sort.Slice(sortedByOut, func(i, j int) bool {
 		return sortedByOut[i].FanOut > sortedByOut[j].FanOut

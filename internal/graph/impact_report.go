@@ -14,8 +14,8 @@ type ImpactReport struct {
 	ChangedPackages   []string
 	AffectedPackages  []string
 	TotalBlastRadius  int
-	CoordinationGaps  []CoordinationGap
-	FanIOForChanged   []FanIOStats
+	CoordinationGaps  []coordinationGap
+	FanIOForChanged   []fanIOStats
 	PartitionLayer    int
 }
 
@@ -28,8 +28,8 @@ func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport 
 	}
 
 	// Compute impact closure.
-	closure := ImpactClosure(graph, changedFiles)
-	report.CoordinationGaps = closure.CoordinationGaps
+	closure := impactClosure(graph, changedFiles)
+	report.CoordinationGaps = closure.coordinationGaps
 
 	// Determine changed packages.
 	changedPkgs := changedFileToPackages(graph, changedFiles)
@@ -63,7 +63,7 @@ func BuildImpactReport(graph *ModuleGraph, changedFiles []string) *ImpactReport 
 	report.TotalBlastRadius = len(report.ChangedPackages) + len(report.AffectedPackages)
 
 	// Fan-in/fan-out for changed packages.
-	allFanIO := ComputeFanIOWithThresholds(graph, DefaultFanIOThresholds)
+	allFanIO := computeFanIOWithThresholds(graph, defaultFanIOThresholds)
 	for _, s := range allFanIO {
 		if changedPkgs[s.Package] {
 			report.FanIOForChanged = append(report.FanIOForChanged, s)

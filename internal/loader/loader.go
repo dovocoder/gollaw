@@ -31,11 +31,11 @@ type Result struct {
 	// Errors encountered during loading (non-fatal).
 	LoadErrors []error
 	// Stats about the loaded codebase.
-	Stats LoadStats
+	Stats loadStats
 }
 
-// LoadStats summarizes the loaded codebase.
-type LoadStats struct {
+// loadStats summarizes the loaded codebase.
+type loadStats struct {
 	PackageCount   int
 	FileCount      int
 	DeclCount      int
@@ -48,64 +48,65 @@ func Load(cfg LoadConfig) (*Result, error) {
 	if len(cfg.Patterns) == 0 {
 		cfg.Patterns = []string{"./..."}
 	}
-
 	pkgs, err := loadPackages(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load packages: %w", err)
 	}
-
 	result := &Result{
 		Packages:    pkgs,
 		SSAByPkg:    make(map[string]*ssa.Package),
 		TypesByPkg:  make(map[string]*types.Package),
 		SyntaxByPkg: make(map[string][]*ast.File),
 	}
+	result.FSET = resolveFSET(pkgs)
+	for _, pkg := range pkgs {
+		collectPkgStats(pkg, result)
+	}
+	buildSSA(result)
+	return result, nil
+}
 
-	// Use the FSET from the first package (all packages share the same FSET).
+// resolveFSET returns the FileSet shared by all packages, or a new one if none.
+func resolveFSET(pkgs []*packages.Package) *token.FileSet {
 	for _, pkg := range pkgs {
 		if pkg.Fset != nil {
-			result.FSET = pkg.Fset
-			break
+			return pkg.Fset
 		}
 	}
-	if result.FSET == nil {
-		result.FSET = token.NewFileSet()
-	}
+	return token.NewFileSet()
+}
 
-	// Index packages, collect errors, build maps.
-	for _, pkg := range pkgs {
-		if len(pkg.Errors) > 0 {
-			for _, e := range pkg.Errors {
-				result.LoadErrors = append(result.LoadErrors, fmt.Errorf("pkg %s: %v", pkg.PkgPath, e))
+// collectPkgStats collects errors, indexes types/syntax, and accumulates stats.
+func collectPkgStats(pkg *packages.Package, result *Result) {
+	for _, e := range pkg.Errors {
+		result.LoadErrors = append(result.LoadErrors, fmt.Errorf("pkg %s: %v", pkg.PkgPath, e))
+	}
+	if pkg.Types == nil || len(pkg.Syntax) == 0 {
+		return
+	}
+	result.TypesByPkg[pkg.PkgPath] = pkg.Types
+	result.SyntaxByPkg[pkg.PkgPath] = pkg.Syntax
+	result.Stats.PackageCount++
+	for _, f := range pkg.Syntax {
+		result.Stats.FileCount++
+		result.Stats.DeclCount += len(f.Decls)
+		for _, decl := range f.Decls {
+			if _, ok := decl.(*ast.FuncDecl); ok {
+				result.Stats.FunctionCount++
 			}
-		}
-		if pkg.Types == nil || len(pkg.Syntax) == 0 {
-			continue
-		}
-		result.TypesByPkg[pkg.PkgPath] = pkg.Types
-		result.SyntaxByPkg[pkg.PkgPath] = pkg.Syntax
-		result.Stats.PackageCount++
-		for _, f := range pkg.Syntax {
-			result.Stats.FileCount++
-			result.Stats.DeclCount += len(f.Decls)
-			for _, decl := range f.Decls {
-				if fn, ok := decl.(*ast.FuncDecl); ok {
-					_ = fn
-					result.Stats.FunctionCount++
-				}
-				if gen, ok := decl.(*ast.GenDecl); ok {
-					for _, spec := range gen.Specs {
-						if ts, ok := spec.(*ast.TypeSpec); ok {
-							_ = ts
-							result.Stats.TypeCount++
-						}
+			if gen, ok := decl.(*ast.GenDecl); ok {
+				for _, spec := range gen.Specs {
+					if _, ok := spec.(*ast.TypeSpec); ok {
+						result.Stats.TypeCount++
 					}
 				}
 			}
 		}
 	}
+}
 
-	// Build SSA for the whole program (needed for dead code / call graph).
+// buildSSA builds the SSA representation for the whole program.
+func buildSSA(result *Result) {
 	prog, pkgsSSA := ssautil.AllPackages(result.Packages, ssa.InstantiateGenerics)
 	if prog != nil {
 		prog.Build()
@@ -116,8 +117,6 @@ func Load(cfg LoadConfig) (*Result, error) {
 			}
 		}
 	}
-
-	return result, nil
 }
 
 func loadPackages(cfg LoadConfig) ([]*packages.Package, error) {

@@ -141,6 +141,7 @@ type cognitiveCounter struct {
 }
 
 // walk recursively inspects a node, accumulating cognitive complexity.
+//gollaw:ignore thin-wrappers
 func (c *cognitiveCounter) walk(n ast.Node) {
 	ast.Inspect(n, func(node ast.Node) bool {
 		if node == nil {
