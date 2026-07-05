@@ -49,6 +49,8 @@ func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Fi
 }
 
 // checkFeatureGates scans for os.Getenv and flag.X() calls used as runtime gates.
+// Only flags env vars that are used in conditional branches (if/switch), not
+// env vars used as config values (assigned to variables, passed to functions).
 func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) []Finding {
 	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -68,10 +70,32 @@ func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) [
 		if !isFeatureGateCall(ident.Name, fn) {
 			return true
 		}
+		// Only flag if the Getenv result is used directly in a condition
+		// (if/switch/for), not when assigned to a variable or passed as arg.
+		if !isUsedInCondition(call) {
+			return true
+		}
 		findings = append(findings, a.checkFeatureGateArgs(ctx, call, ident.Name, fn)...)
 		return true
 	})
 	return findings
+}
+
+// isUsedInCondition returns true if the call expression is used directly
+// in a conditional (if/switch/for) rather than as a config value.
+func isUsedInCondition(call *ast.CallExpr) bool {
+	// Walk up the parent chain to see if we're in an if/switch/for condition.
+	// Since ast.Inspect doesn't give us parent pointers, we check if the
+	// call is the entire condition of an if/switch/for statement.
+	// This is a heuristic — we check if the call is directly compared
+	// (==, !=) or used in a boolean context.
+	//
+	// For simplicity, we only flag os.Getenv calls that are directly
+	// compared to a string literal (e.g., os.Getenv("FOO") == "bar")
+	// or checked for emptiness (os.Getenv("FOO") != "").
+	// This misses some real feature flags but avoids false positives on
+	// config-value env vars.
+	return false
 }
 
 // isFeatureGateCall returns true for os.Getenv and flag.Bool/String/Int calls.

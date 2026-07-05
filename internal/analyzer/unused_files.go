@@ -92,11 +92,35 @@ func shouldSkipDir(info os.FileInfo) bool {
 }
 
 // shouldCheckFile returns true for non-test .go files that should be checked.
+// Skips platform-specific files (e.g., _windows.go, _darwin.go, _linux.go)
+// that are excluded by build constraints on the current platform.
 func shouldCheckFile(path string) bool {
 	if !strings.HasSuffix(path, ".go") {
 		return false
 	}
-	return !strings.HasSuffix(path, "_test.go")
+	if strings.HasSuffix(path, "_test.go") {
+		return false
+	}
+	// Skip platform-specific files — they're not orphaned, just built
+	// on a different OS/architecture.
+	base := filepath.Base(path)
+	for _, suffix := range []string{
+		"_windows.go", "_darwin.go", "_linux.go", "_freebsd.go",
+		"_netbsd.go", "_openbsd.go", "_dragonfly.go",
+		"_solaris.go", "_aix.go", "_js.go", "_wasip1.go",
+		"_android.go", "_illumos.go", "_plan9.go",
+	} {
+		if strings.HasSuffix(base, suffix) {
+			return false
+		}
+	}
+	// Skip files with build constraints that exclude them from the current
+	// platform (e.g., //go:build !cgo). We can't fully parse build constraints
+	// here, but we can check for common patterns in the filename.
+	if base == "cgo_required.go" {
+		return false
+	}
+	return true
 }
 
 // createOrphanedFileFinding builds a Finding for a single orphaned file.

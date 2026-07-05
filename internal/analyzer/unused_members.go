@@ -76,6 +76,11 @@ func (a *unusedMembersAnalyzer) findUnusedFields(ctx *Context, fieldUsage map[st
 			if !ok {
 				continue
 			}
+			// Skip generated structs (sqlc models, params, etc.)
+			pos := ctx.FSET.Position(named.Obj().Pos())
+			if pos.Filename != "" && isGeneratedFile(pos.Filename) {
+				continue
+			}
 			findings = append(findings, a.checkStructFields(ctx, pkgPath, named, structType, fieldUsage)...)
 		}
 	}
@@ -130,6 +135,20 @@ func (a *unusedMembersAnalyzer) checkUnimplementedInterfaceMethods(ctx *Context)
 			}
 			iface, ok := named.Underlying().(*types.Interface)
 			if !ok {
+				continue
+			}
+			// Skip generated interfaces (sqlc DBTX, etc.)
+			pos := ctx.FSET.Position(named.Obj().Pos())
+			if pos.Filename != "" && isGeneratedFile(pos.Filename) {
+				continue
+			}
+			// Skip built-in interfaces (error, fmt.Stringer, etc.)
+			// error is a predeclared type with Pkg() == nil
+			if named.Obj().Pkg() == nil {
+				continue
+			}
+			// Also skip interfaces from the universe scope
+			if named.Obj().Pkg().Path() == "builtin" {
 				continue
 			}
 			findings = append(findings, a.checkInterfaceMethods(ctx, named, iface)...)

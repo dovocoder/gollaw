@@ -110,6 +110,10 @@ func (a *churnAnalyzer) buildChurnFindings(modDir string, fileCommits map[string
 // isNonSourceFile returns true for files that are not source code and whose
 // churn is expected (docs, configs, changelogs, lock files, etc.).
 func isNonSourceFile(file string) bool {
+	// Skip test files — test churn is expected and not actionable
+	if strings.HasSuffix(file, "_test.go") {
+		return true
+	}
 	ext := filepath.Ext(file)
 	switch ext {
 	case ".md", ".txt", ".rst":
