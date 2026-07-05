@@ -61,6 +61,12 @@ func coreToolDefs() []toolDef {
 				"properties": map[string]interface{}{},
 			},
 		},
+	}
+}
+
+// symbolToolDefs returns tool definitions for symbol-based tools (explain, trace).
+func symbolToolDefs() []toolDef {
+	return []toolDef{
 		{
 			Name:        "gollaw_explain",
 			Description: "Explain why a symbol is flagged by an analyzer.",
@@ -163,6 +169,7 @@ func maintenanceToolDefs() []toolDef {
 // Extracted from handleToolsList to keep server.go focused on protocol handling.
 func toolDefs() []toolDef {
 	all := coreToolDefs()
+	all = append(all, symbolToolDefs()...)
 	all = append(all, qualityToolDefs()...)
 	all = append(all, inspectionToolDefs()...)
 	all = append(all, maintenanceToolDefs()...)

@@ -1028,6 +1028,8 @@ func (s *server) loadAndAnalyzeOrError(id json.RawMessage, dir string) (*analyze
 
 // parseArgs unmarshals JSON args into the given struct, tolerating empty args.
 // This eliminates the repeated "if len(args) > 0 { json.Unmarshal(args, &p) }" pattern.
+//
+//gollaw:keep
 func parseArgs[T any](args json.RawMessage) T {
 	var p T
 	if len(args) > 0 {

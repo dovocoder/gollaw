@@ -197,6 +197,12 @@ func parseAnalyzeFlags(args []string) (analyzeOpts, int) {
 	if len(o.patterns) == 0 {
 		o.patterns = []string{"./..."}
 	}
+	// Expand "." to "./..." so all packages are loaded, not just the root.
+	for i, p := range o.patterns {
+		if p == "." {
+			o.patterns[i] = "./..."
+		}
+	}
 	return o, 0
 }
 
