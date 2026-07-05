@@ -36,6 +36,7 @@ func Watch(dir string, patterns []string, onChange func()) error {
 	return watchLoop(watcher, debounceEvent)
 }
 
+//gollaw:keep
 // addWatchDirs recursively adds directories to the watcher, skipping
 // hidden directories, vendor, node_modules, and testdata.
 func addWatchDirs(watcher *fsnotify.Watcher, dir string) error {

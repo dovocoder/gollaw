@@ -15,34 +15,52 @@ func (a *reExportCyclesAnalyzer) Category() Category   { return categoryDependen
 func (a *reExportCyclesAnalyzer) Description() string  { return "Detects re-export cycles between packages" }
 
 func (a *reExportCyclesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	var findings []Finding
+	reExports := a.collectReExports(ctx)
+	return a.detectReExportCycles(reExports), nil
+}
 
+// collectReExports builds a map of pkgPath → {reExportedFromPkg → count}.
+func (a *reExportCyclesAnalyzer) collectReExports(ctx *Context) map[string]map[string]int {
 	reExports := make(map[string]map[string]int)
-
 	for pkgPath, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
-			for _, decl := range file.Decls {
-				if gd, ok := decl.(*ast.GenDecl); ok {
-					for _, spec := range gd.Specs {
-						if ts, ok := spec.(*ast.TypeSpec); ok {
-							if ts.Assign != 0 {
-								if ident, ok := ts.Type.(*ast.Ident); ok {
-									reExportedFrom := findImportForIdent(file, ident.Name)
-									if reExportedFrom != "" {
-										if reExports[pkgPath] == nil {
-											reExports[pkgPath] = make(map[string]int)
-										}
-										reExports[pkgPath][reExportedFrom]++
-									}
-								}
-							}
-						}
-					}
-				}
-			}
+			a.collectFileReExports(file, pkgPath, reExports)
 		}
 	}
+	return reExports
+}
 
+// collectFileReExports scans a single file for re-exported type aliases.
+func (a *reExportCyclesAnalyzer) collectFileReExports(file *ast.File, pkgPath string, reExports map[string]map[string]int) {
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*ast.TypeSpec)
+			if !ok || ts.Assign == 0 {
+				continue
+			}
+			ident, ok := ts.Type.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			reExportedFrom := findImportForIdent(file, ident.Name)
+			if reExportedFrom == "" {
+				continue
+			}
+			if reExports[pkgPath] == nil {
+				reExports[pkgPath] = make(map[string]int)
+			}
+			reExports[pkgPath][reExportedFrom]++
+		}
+	}
+}
+
+// detectReExportCycles runs DFS on the re-export graph to find cycles.
+func (a *reExportCyclesAnalyzer) detectReExportCycles(reExports map[string]map[string]int) []Finding {
+	var findings []Finding
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
 
@@ -68,21 +86,25 @@ func (a *reExportCyclesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		visited = make(map[string]bool)
 		recStack = make(map[string]bool)
 		if cycle := dfs(pkgPath, nil); cycle != nil {
-			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  categoryDependencies,
-				Severity:  SeverityWarning,
-				Message:    "re-export cycle: " + strings.Join(cycle, " → "),
-				Detail:     "These packages re-export types from each other in a cycle, creating tight coupling.",
-				File:       pkgPath,
-				Line:       1,
-				Suggestion: "Break the cycle by moving shared types to a common package",
-				RuleID:     "GLW-RC001",
-			})
+			findings = append(findings, createReExportCycleFinding(cycle))
 		}
 	}
+	return findings
+}
 
-	return findings, nil
+// createReExportCycleFinding builds a Finding for a detected re-export cycle.
+func createReExportCycleFinding(cycle []string) Finding {
+	return Finding{
+		Analyzer:   "re-export-cycles",
+		Category:   categoryDependencies,
+		Severity:   SeverityWarning,
+		Message:     "re-export cycle: " + strings.Join(cycle, " → "),
+		Detail:      "These packages re-export types from each other in a cycle, creating tight coupling.",
+		File:        cycle[0],
+		Line:        1,
+		Suggestion:  "Break the cycle by moving shared types to a common package",
+		RuleID:      "GLW-RC001",
+	}
 }
 
 func findImportForIdent(file *ast.File, identName string) string {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // architectureAnalyzer checks user-defined architecture boundary rules.
@@ -21,38 +23,8 @@ func (a *architectureAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	}
 
 	var findings []Finding
-
 	for _, rule := range ctx.Config.Rules {
-		// rule: package "rule.Package" must not import "rule.MustNotUse"
-		// Match on path suffix so users can write "internal/cli" instead of
-		// the full "github.com/dovocoder/gollaw/internal/cli".
-		for _, pkg := range ctx.Packages {
-			if !pkgHasSuffix(pkg.PkgPath, rule.Package) {
-				continue
-			}
-			for _, imported := range pkg.Imports {
-				if imported == nil {
-					continue
-				}
-				if pkgHasSuffix(imported.PkgPath, rule.MustNotUse) {
-					file := pkgPathFile(pkg.GoFiles)
-					if file == "" {
-						file = imported.PkgPath
-					}
-					findings = append(findings, Finding{
-						Analyzer:  a.Name(),
-						Category:  a.Category(),
-						Severity:  SeverityCritical,
-						Message:    fmt.Sprintf("architecture violation: %s imports %s", pkg.PkgPath, imported.PkgPath),
-						Detail:     fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
-						File:       file,
-						Line:       1,
-						RuleID:     "GLW-AR001",
-						Suggestion: fmt.Sprintf("Move the shared logic to a package that both %s and %s can import, or use an interface to invert the dependency.", rule.Package, rule.MustNotUse),
-					})
-				}
-			}
-		}
+		findings = append(findings, a.checkRule(ctx, rule)...)
 	}
 
 	sort.Slice(findings, func(i, j int) bool {
@@ -63,6 +35,49 @@ func (a *architectureAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	})
 
 	return findings, nil
+}
+
+// checkRule checks all packages against a single architecture rule.
+func (a *architectureAnalyzer) checkRule(ctx *Context, rule Rule) []Finding {
+	var findings []Finding
+	for _, pkg := range ctx.Packages {
+		if !pkgHasSuffix(pkg.PkgPath, rule.Package) {
+			continue
+		}
+		findings = append(findings, a.checkPackageImports(ctx, pkg, rule)...)
+	}
+	return findings
+}
+
+// checkPackageImports checks a single package's imports against a rule.
+func (a *architectureAnalyzer) checkPackageImports(ctx *Context, pkg *packages.Package, rule Rule) []Finding {
+	var findings []Finding
+	for _, imported := range pkg.Imports {
+		if imported == nil || !pkgHasSuffix(imported.PkgPath, rule.MustNotUse) {
+			continue
+		}
+		findings = append(findings, a.createViolationFinding(pkg, imported.PkgPath, rule))
+	}
+	return findings
+}
+
+// createViolationFinding builds a Finding for a single architecture violation.
+func (a *architectureAnalyzer) createViolationFinding(pkg *packages.Package, importedPath string, rule Rule) Finding {
+	file := pkgPathFile(pkg.GoFiles)
+	if file == "" {
+		file = importedPath
+	}
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   SeverityCritical,
+		Message:     fmt.Sprintf("architecture violation: %s imports %s", pkg.PkgPath, importedPath),
+		Detail:      fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
+		File:        file,
+		Line:        1,
+		RuleID:      "GLW-AR001",
+		Suggestion:  fmt.Sprintf("Move the shared logic to a package that both %s and %s can import, or use an interface to invert the dependency.", rule.Package, rule.MustNotUse),
+	}
 }
 
 func pkgPathFile(files []string) string {

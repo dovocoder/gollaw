@@ -18,55 +18,99 @@ func (a *featureFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	var findings []Finding
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
-			for _, cg := range file.Comments {
-				text := cg.Text()
-				if strings.Contains(text, "//go:build") || strings.Contains(text, "// +build") {
-					tag := extractBuildTag(text)
-					findings = append(findings, Finding{
-						Analyzer:  a.Name(),
-						Category:  CategoryCodeSmell,
-						Severity:  SeverityInfo,
-						Message:    "file guarded by build tag: " + tag,
-						Detail:     "Functions in this file may be dead in the current build configuration.",
-						File:       ctx.FSET.Position(file.Pos()).Filename,
-						Line:       ctx.FSET.Position(cg.Pos()).Line,
-						Suggestion: "Verify that code behind this build tag is still needed",
-						RuleID:     "GLW-FF001",
-					})
-				}
-			}
-			ast.Inspect(file, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok {
-					if se, ok := call.Fun.(*ast.SelectorExpr); ok {
-						if ident, ok := se.X.(*ast.Ident); ok {
-							fn := se.Sel.Name
-							if (ident.Name == "os" && fn == "Getenv") || (ident.Name == "flag" && (fn == "Bool" || fn == "String" || fn == "Int")) {
-								if len(call.Args) > 0 {
-									if lit, ok := call.Args[0].(*ast.BasicLit); ok {
-										flagName := strings.Trim(lit.Value, `"`)
-										pos := ctx.FSET.Position(call.Pos())
-										findings = append(findings, Finding{
-											Analyzer:  a.Name(),
-											Category:  CategoryCodeSmell,
-											Severity:  SeverityInfo,
-											Message:    "feature gate via " + ident.Name + "." + fn + `("` + flagName + `")`,
-											Detail:     "This env var or flag gates code. If the gate is never set, the guarded code may be dead.",
-											File:       pos.Filename,
-											Line:       pos.Line,
-											Suggestion: "Consider using build tags instead of runtime flags for dead code elimination",
-											RuleID:     "GLW-FF002",
-										})
-									}
-								}
-							}
-						}
-					}
-				}
-				return true
-			})
+			findings = append(findings, a.checkBuildTags(ctx, file)...)
+			findings = append(findings, a.checkFeatureGates(ctx, file)...)
 		}
 	}
 	return findings, nil
+}
+
+// checkBuildTags scans file comments for conditional-compilation directives.
+func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Finding {
+	var findings []Finding
+	for _, cg := range file.Comments {
+		text := cg.Text()
+		if strings.Contains(text, "//go:build") || strings.Contains(text, "// +build") {
+			tag := extractBuildTag(text)
+			findings = append(findings, Finding{
+				Analyzer:   a.Name(),
+				Category:   CategoryCodeSmell,
+				Severity:   SeverityInfo,
+				Message:     "file guarded by build tag: " + tag,
+				Detail:      "Functions in this file may be dead in the current build configuration.",
+				File:        ctx.FSET.Position(file.Pos()).Filename,
+				Line:        ctx.FSET.Position(cg.Pos()).Line,
+				Suggestion:  "Verify that code behind this build tag is still needed",
+				RuleID:      "GLW-FF001",
+			})
+		}
+	}
+	return findings
+}
+
+// checkFeatureGates scans for os.Getenv and flag.X() calls used as runtime gates.
+func (a *featureFlagsAnalyzer) checkFeatureGates(ctx *Context, file *ast.File) []Finding {
+	var findings []Finding
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		se, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := se.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		fn := se.Sel.Name
+		if !isFeatureGateCall(ident.Name, fn) {
+			return true
+		}
+		findings = append(findings, a.checkFeatureGateArgs(ctx, call, ident.Name, fn)...)
+		return true
+	})
+	return findings
+}
+
+// isFeatureGateCall returns true for os.Getenv and flag.Bool/String/Int calls.
+//gollaw:keep
+func isFeatureGateCall(pkgName, fnName string) bool {
+	if pkgName == "os" && fnName == "Getenv" {
+		return true
+	}
+	if pkgName == "flag" {
+		switch fnName {
+		case "Bool", "String", "Int":
+			return true
+		}
+	}
+	return false
+}
+
+// checkFeatureGateArgs checks call arguments for a string literal flag name.
+func (a *featureFlagsAnalyzer) checkFeatureGateArgs(ctx *Context, call *ast.CallExpr, pkgName, fn string) []Finding {
+	if len(call.Args) == 0 {
+		return nil
+	}
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok {
+		return nil
+	}
+	flagName := strings.Trim(lit.Value, `"`)
+	pos := ctx.FSET.Position(call.Pos())
+	return []Finding{{
+		Analyzer:   a.Name(),
+		Category:   CategoryCodeSmell,
+		Severity:   SeverityInfo,
+		Message:     "feature gate via " + pkgName + "." + fn + `("` + flagName + `")`,
+		Detail:      "This env var or flag gates code. If the gate is never set, the guarded code may be dead.",
+		File:        pos.Filename,
+		Line:        pos.Line,
+		Suggestion:  "Consider using build tags instead of runtime flags for dead code elimination",
+		RuleID:      "GLW-FF002",
+	}}
 }
 
 func extractBuildTag(commentText string) string {

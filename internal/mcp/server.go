@@ -30,6 +30,7 @@ import (
 	"github.com/dovocoder/gollaw/internal/suppress"
 	"github.com/dovocoder/gollaw/internal/trace"
 	"github.com/dovocoder/gollaw/internal/xref"
+	"golang.org/x/tools/go/packages"
 )
 
 const protocolVersion = "2024-11-05"
@@ -179,6 +180,36 @@ func (s *server) handleInitialize(id json.RawMessage, params json.RawMessage) {
 	s.sendResponse(id, result)
 }
 
+// toolHandler is a dispatch entry for a tool call.
+type toolHandler func(s *server, id json.RawMessage, args json.RawMessage)
+
+// toolDispatch maps tool names to their handler functions.
+var toolDispatch = map[string]toolHandler{
+	"gollaw_analyze":         func(s *server, id, args json.RawMessage) { s.toolAnalyze(id, args) },
+	"gollaw_list_analyzers":  func(s *server, id, _ json.RawMessage) { s.toolListAnalyzers(id) },
+	"gollaw_explain":         func(s *server, id, args json.RawMessage) { s.toolExplain(id, args) },
+	"gollaw_trace":           func(s *server, id, args json.RawMessage) { s.toolTrace(id, args) },
+	"gollaw_health":          func(s *server, id, args json.RawMessage) { s.toolHealth(id, args) },
+	"gollaw_audit":           func(s *server, id, args json.RawMessage) { s.toolAudit(id, args) },
+	"gollaw_guard":           func(s *server, id, args json.RawMessage) { s.toolGuard(id, args) },
+	"gollaw_baseline_save":   func(s *server, id, args json.RawMessage) { s.toolBaselineSave(id, args) },
+	"gollaw_baseline_diff":   func(s *server, id, args json.RawMessage) { s.toolBaselineDiff(id, args) },
+	"gollaw_public_api":      func(s *server, id, args json.RawMessage) { s.toolPublicAPI(id, args) },
+	"gollaw_coverage":        func(s *server, id, args json.RawMessage) { s.toolCoverage(id, args) },
+	"gollaw_file_scores":     func(s *server, id, args json.RawMessage) { s.toolFileScores(id, args) },
+	"gollaw_xref":            func(s *server, id, args json.RawMessage) { s.toolXRef(id, args) },
+	"gollaw_dupes":           func(s *server, id, args json.RawMessage) { s.toolDupes(id, args) },
+	"gollaw_security":        func(s *server, id, args json.RawMessage) { s.toolSecurity(id, args) },
+	"gollaw_impact":          func(s *server, id, args json.RawMessage) { s.toolImpact(id, args) },
+	"gollaw_inspect":         func(s *server, id, args json.RawMessage) { s.toolInspect(id, args) },
+	"gollaw_list_boundaries": func(s *server, id, args json.RawMessage) { s.toolListBoundaries(id, args) },
+	"gollaw_project_info":    func(s *server, id, args json.RawMessage) { s.toolProjectInfo(id, args) },
+	"gollaw_check_changed":   func(s *server, id, args json.RawMessage) { s.toolCheckChanged(id, args) },
+	"gollaw_suppress":        func(s *server, id, args json.RawMessage) { s.toolSuppress(id, args) },
+	"gollaw_owners":          func(s *server, id, args json.RawMessage) { s.toolOwners(id, args) },
+	"gollaw_fix_preview":     func(s *server, id, args json.RawMessage) { s.toolFixPreview(id, args) },
+}
+
 func (s *server) handleToolsCall(id json.RawMessage, params json.RawMessage) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -186,56 +217,12 @@ func (s *server) handleToolsCall(id json.RawMessage, params json.RawMessage) {
 		return
 	}
 
-	switch p.Name {
-	case "gollaw_analyze":
-		s.toolAnalyze(id, p.Arguments)
-	case "gollaw_list_analyzers":
-		s.toolListAnalyzers(id)
-	case "gollaw_explain":
-		s.toolExplain(id, p.Arguments)
-	case "gollaw_trace":
-		s.toolTrace(id, p.Arguments)
-	case "gollaw_health":
-		s.toolHealth(id, p.Arguments)
-	case "gollaw_audit":
-		s.toolAudit(id, p.Arguments)
-	case "gollaw_guard":
-		s.toolGuard(id, p.Arguments)
-	case "gollaw_baseline_save":
-		s.toolBaselineSave(id, p.Arguments)
-	case "gollaw_baseline_diff":
-		s.toolBaselineDiff(id, p.Arguments)
-	case "gollaw_public_api":
-		s.toolPublicAPI(id, p.Arguments)
-	case "gollaw_coverage":
-		s.toolCoverage(id, p.Arguments)
-	case "gollaw_file_scores":
-		s.toolFileScores(id, p.Arguments)
-	case "gollaw_xref":
-		s.toolXRef(id, p.Arguments)
-	case "gollaw_dupes":
-		s.toolDupes(id, p.Arguments)
-	case "gollaw_security":
-		s.toolSecurity(id, p.Arguments)
-	case "gollaw_impact":
-		s.toolImpact(id, p.Arguments)
-	case "gollaw_inspect":
-		s.toolInspect(id, p.Arguments)
-	case "gollaw_list_boundaries":
-		s.toolListBoundaries(id, p.Arguments)
-	case "gollaw_project_info":
-		s.toolProjectInfo(id, p.Arguments)
-	case "gollaw_check_changed":
-		s.toolCheckChanged(id, p.Arguments)
-	case "gollaw_suppress":
-		s.toolSuppress(id, p.Arguments)
-	case "gollaw_owners":
-		s.toolOwners(id, p.Arguments)
-	case "gollaw_fix_preview":
-		s.toolFixPreview(id, p.Arguments)
-	default:
+	handler, ok := toolDispatch[p.Name]
+	if !ok {
 		s.sendError(id, -32602, fmt.Sprintf("unknown tool: %s", p.Name))
+		return
 	}
+	handler(s, id, p.Arguments)
 }
 
 // ─── Tool handlers ─────────────────────────────────────────────────────
@@ -424,34 +411,9 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 	}
 	dir := p.Dir
 
-	// Parse architecture rules.
-	var archRules []analyzer.Rule
-	for _, r := range p.Rules {
-		parts := strings.SplitN(r, " must not import ", 2)
-		if len(parts) == 2 {
-			archRules = append(archRules, analyzer.Rule{
-				Package:    strings.TrimSpace(parts[0]),
-				MustNotUse: strings.TrimSpace(parts[1]),
-			})
-		}
-	}
-
-	// Load config rules if no explicit rules were given.
+	archRules := parseArchRules(p.Rules)
 	if len(archRules) == 0 {
-		configPath := config.FindConfig(dir)
-		if configPath != "" {
-			if fc, err := config.Load(configPath); err == nil {
-				for _, r := range fc.Rules {
-					parts := strings.SplitN(r, " must not import ", 2)
-					if len(parts) == 2 {
-						archRules = append(archRules, analyzer.Rule{
-							Package:    strings.TrimSpace(parts[0]),
-							MustNotUse: strings.TrimSpace(parts[1]),
-						})
-					}
-				}
-			}
-		}
+		archRules = loadConfigRules(dir)
 	}
 
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
@@ -478,6 +440,35 @@ func (s *server) toolGuard(id json.RawMessage, args json.RawMessage) {
 	}
 
 	s.sendToolJSON(id, guardRep)
+}
+
+// parseArchRules parses rule strings of the form "pkg must not import other"
+// into analyzer.Rule values.
+func parseArchRules(ruleStrs []string) []analyzer.Rule {
+	var rules []analyzer.Rule
+	for _, r := range ruleStrs {
+		parts := strings.SplitN(r, " must not import ", 2)
+		if len(parts) == 2 {
+			rules = append(rules, analyzer.Rule{
+				Package:    strings.TrimSpace(parts[0]),
+				MustNotUse: strings.TrimSpace(parts[1]),
+			})
+		}
+	}
+	return rules
+}
+
+// loadConfigRules loads architecture rules from the project's .gollaw.yaml config.
+func loadConfigRules(dir string) []analyzer.Rule {
+	configPath := config.FindConfig(dir)
+	if configPath == "" {
+		return nil
+	}
+	fc, err := config.Load(configPath)
+	if err != nil {
+		return nil
+	}
+	return parseArchRules(fc.Rules)
 }
 
 func (s *server) toolBaselineSave(id json.RawMessage, args json.RawMessage) {
@@ -670,43 +661,9 @@ func (s *server) toolInspect(id json.RawMessage, args json.RawMessage) {
 
 func (s *server) inspectFile(ctx *analyzer.Context, findings []analyzer.Finding, target string) map[string]interface{} {
 	absTarget, _ := filepath.Abs(target)
-
-	// Find findings in this file.
-	var fileFindings []analyzer.Finding
-	for _, f := range findings {
-		if f.File == target || f.File == absTarget {
-			fileFindings = append(fileFindings, f)
-		}
-	}
-
-	// Determine the package this file belongs to.
-	pkgPath := ""
-	for _, pkg := range ctx.Packages {
-		for _, f := range pkg.GoFiles {
-			absF, _ := filepath.Abs(f)
-			if absF == absTarget || f == target {
-				pkgPath = pkg.PkgPath
-				break
-			}
-		}
-		if pkgPath != "" {
-			break
-		}
-	}
-
-	// Health score for this file.
-	scores := filescore.ScoreFiles(fileFindings, nil)
-	var score interface{}
-	if len(scores) > 0 {
-		score = scores[0]
-	} else {
-		score = map[string]interface{}{
-			"file":         target,
-			"score":        100,
-			"grade":        "A",
-			"findingCount": 0,
-		}
-	}
+	fileFindings := filterFindingsByTarget(findings, target, absTarget)
+	pkgPath := findPackageForFile(ctx.Packages, target, absTarget)
+	score := fileHealthScore(fileFindings, target)
 
 	return map[string]interface{}{
 		"kind":        "file",
@@ -717,6 +674,46 @@ func (s *server) inspectFile(ctx *analyzer.Context, findings []analyzer.Finding,
 		"findings":    fileFindings,
 		"findingCount": len(fileFindings),
 		"healthScore": score,
+	}
+}
+
+// filterFindingsByTarget returns findings that match the given file path
+// (either relative or absolute form).
+func filterFindingsByTarget(findings []analyzer.Finding, target, absTarget string) []analyzer.Finding {
+	var matched []analyzer.Finding
+	for _, f := range findings {
+		if f.File == target || f.File == absTarget {
+			matched = append(matched, f)
+		}
+	}
+	return matched
+}
+
+// findPackageForFile returns the package path containing the given file.
+func findPackageForFile(pkgs []*packages.Package, target, absTarget string) string {
+	for _, pkg := range pkgs {
+		for _, f := range pkg.GoFiles {
+			absF, _ := filepath.Abs(f)
+			if absF == absTarget || f == target {
+				return pkg.PkgPath
+			}
+		}
+	}
+	return ""
+}
+
+// fileHealthScore returns the health score for a set of file findings.
+// If no scores are available, returns a default perfect score.
+func fileHealthScore(fileFindings []analyzer.Finding, target string) interface{} {
+	scores := filescore.ScoreFiles(fileFindings, nil)
+	if len(scores) > 0 {
+		return scores[0]
+	}
+	return map[string]interface{}{
+		"file":         target,
+		"score":        100,
+		"grade":        "A",
+		"findingCount": 0,
 	}
 }
 
@@ -763,22 +760,7 @@ func (s *server) inspectSymbol(ctx *analyzer.Context, findings []analyzer.Findin
 func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
 	dir := parseDirArgs(args)
 
-	// Load config for rules.
-	var archRules []analyzer.Rule
-	configPath := config.FindConfig(dir)
-	if configPath != "" {
-		if fc, err := config.Load(configPath); err == nil {
-			for _, r := range fc.Rules {
-				parts := strings.SplitN(r, " must not import ", 2)
-				if len(parts) == 2 {
-					archRules = append(archRules, analyzer.Rule{
-						Package:    strings.TrimSpace(parts[0]),
-						MustNotUse: strings.TrimSpace(parts[1]),
-					})
-				}
-			}
-		}
-	}
+	archRules := loadConfigRules(dir)
 
 	result, err := loader.Load(loader.LoadConfig{Patterns: []string{"./..."}, Dir: dir})
 	if err != nil {
@@ -786,47 +768,64 @@ func (s *server) toolListBoundaries(id json.RawMessage, args json.RawMessage) {
 		return
 	}
 
-	type boundaryInfo struct {
-		Package    string         `json:"package"`
-		Imports    []string       `json:"imports"`
-		Rules      []analyzer.Rule `json:"rules"`
-	}
-	var boundaries []boundaryInfo
-
-	for _, pkg := range result.Packages {
-		if pkg.Types == nil {
-			continue
-		}
-		var imports []string
-		for _, imp := range pkg.Imports {
-			if imp != nil {
-				imports = append(imports, imp.PkgPath)
-			}
-		}
-		sort.Strings(imports)
-
-		var applicableRules []analyzer.Rule
-		for _, rule := range archRules {
-			if pkgHasSuffixStr(pkg.PkgPath, rule.Package) || pkgHasSuffixStr(pkg.PkgPath, rule.MustNotUse) {
-				applicableRules = append(applicableRules, rule)
-			}
-		}
-
-		boundaries = append(boundaries, boundaryInfo{
-			Package: pkg.PkgPath,
-			Imports: imports,
-			Rules:   applicableRules,
-		})
-	}
+	boundaries := buildBoundaries(result.Packages, archRules)
 
 	data, _ := json.MarshalIndent(map[string]interface{}{
-		"totalRules":     len(archRules),
-		"totalPackages":  len(boundaries),
-		"boundaries":     boundaries,
+		"totalRules":    len(archRules),
+		"totalPackages": len(boundaries),
+		"boundaries":    boundaries,
 	}, "", "  ")
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: string(data)}},
 	})
+}
+
+// boundaryInfo describes a package's imports and applicable rules.
+type boundaryInfo struct {
+	Package string          `json:"package"`
+	Imports []string        `json:"imports"`
+	Rules   []analyzer.Rule `json:"rules"`
+}
+
+// buildBoundaries constructs boundary info for each package with type info,
+// collecting sorted imports and applicable architecture rules.
+func buildBoundaries(packages []*packages.Package, archRules []analyzer.Rule) []boundaryInfo {
+	var boundaries []boundaryInfo
+	for _, pkg := range packages {
+		if pkg.Types == nil {
+			continue
+		}
+		boundaries = append(boundaries, boundaryInfo{
+			Package: pkg.PkgPath,
+			Imports: collectSortedImports(pkg),
+			Rules:   applicableRulesForPkg(pkg.PkgPath, archRules),
+		})
+	}
+	return boundaries
+}
+
+// collectSortedImports returns sorted import paths from a package.
+func collectSortedImports(pkg *packages.Package) []string {
+	var imports []string
+	for _, imp := range pkg.Imports {
+		if imp != nil {
+			imports = append(imports, imp.PkgPath)
+		}
+	}
+	sort.Strings(imports)
+	return imports
+}
+
+// applicableRulesForPkg returns rules where the package matches either
+// the rule's Package or MustNotUse field.
+func applicableRulesForPkg(pkgPath string, rules []analyzer.Rule) []analyzer.Rule {
+	var applicable []analyzer.Rule
+	for _, rule := range rules {
+		if pkgHasSuffixStr(pkgPath, rule.Package) || pkgHasSuffixStr(pkgPath, rule.MustNotUse) {
+			applicable = append(applicable, rule)
+		}
+	}
+	return applicable
 }
 
 func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
@@ -866,14 +865,30 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 		return
 	}
 
-	// Get changed files via git.
 	changedFiles, err := getChangedFiles(baseRef, dir)
 	if err != nil {
 		s.sendToolError(id, err)
 		return
 	}
 
-	// Build a set of changed files (both relative and absolute forms).
+	changedSet := buildChangedFileSet(changedFiles, dir)
+	changedFindings := filterFindingsByFiles(findings, changedSet)
+
+	data, _ := json.MarshalIndent(map[string]interface{}{
+		"baseRef":           baseRef,
+		"changedFiles":      changedFiles,
+		"changedFileCount":  len(changedFiles),
+		"findings":          changedFindings,
+		"findingCount":      len(changedFindings),
+	}, "", "  ")
+	s.sendResponse(id, callToolResult{
+		Content: []contentBlock{{Type: "text", Text: string(data)}},
+	})
+}
+
+// buildChangedFileSet creates a set of changed file paths in multiple forms
+// (relative, absolute, and basename) for matching against findings.
+func buildChangedFileSet(changedFiles []string, dir string) map[string]bool {
 	changedSet := make(map[string]bool)
 	for _, f := range changedFiles {
 		changedSet[f] = true
@@ -881,24 +896,18 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 		changedSet[abs] = true
 		changedSet[filepath.Base(f)] = true
 	}
+	return changedSet
+}
 
-	var changedFindings []analyzer.Finding
+// filterFindingsByFiles returns findings whose File field is in the given set.
+func filterFindingsByFiles(findings []analyzer.Finding, fileSet map[string]bool) []analyzer.Finding {
+	var matched []analyzer.Finding
 	for _, f := range findings {
-		if changedSet[f.File] {
-			changedFindings = append(changedFindings, f)
+		if fileSet[f.File] {
+			matched = append(matched, f)
 		}
 	}
-
-	data, _ := json.MarshalIndent(map[string]interface{}{
-		"baseRef":         baseRef,
-		"changedFiles":    changedFiles,
-		"changedFileCount": len(changedFiles),
-		"findings":        changedFindings,
-		"findingCount":    len(changedFindings),
-	}, "", "  ")
-	s.sendResponse(id, callToolResult{
-		Content: []contentBlock{{Type: "text", Text: string(data)}},
-	})
+	return matched
 }
 
 func (s *server) toolSuppress(id json.RawMessage, args json.RawMessage) {

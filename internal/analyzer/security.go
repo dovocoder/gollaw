@@ -68,14 +68,14 @@ func (a *securityAnalyzer) checkTODOComments(ctx *Context, file *ast.File, todoP
 		pos := ctx.FSET.Position(node.Pos())
 		if todoPattern.MatchString(text) {
 			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityInfo,
-				Message:    fmt.Sprintf("found %s", strings.TrimSpace(text)),
-				File:       pos.Filename,
-				Line:       pos.Line,
-				RuleID:     "GLW-SC010",
-				Suggestion: "Resolve this technical debt item. TODOs and FIXMEs accumulate over time.",
+				Analyzer:   a.Name(),
+				Category:   a.Category(),
+				Severity:   SeverityInfo,
+				Message:     fmt.Sprintf("found %s", strings.TrimSpace(text)),
+				File:        pos.Filename,
+				Line:        pos.Line,
+				RuleID:      "GLW-SC010",
+				Suggestion:  "Resolve this technical debt item. TODOs and FIXMEs accumulate over time.",
 			})
 		}
 		return true
@@ -86,8 +86,14 @@ func (a *securityAnalyzer) checkTODOComments(ctx *Context, file *ast.File, todoP
 // checkHardcodedSecrets scans comments and string literals for hardcoded secrets.
 func (a *securityAnalyzer) checkHardcodedSecrets(ctx *Context, file *ast.File, patterns []secretPattern) []Finding {
 	var findings []Finding
+	findings = append(findings, a.scanCommentsForSecrets(ctx, file, patterns)...)
+	findings = append(findings, a.scanStringLiteralsForSecrets(ctx, file, patterns)...)
+	return findings
+}
 
-	// Secrets in comments.
+// scanCommentsForSecrets inspects comment nodes for secret patterns.
+func (a *securityAnalyzer) scanCommentsForSecrets(ctx *Context, file *ast.File, patterns []secretPattern) []Finding {
+	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {
 		node, ok := n.(*ast.Comment)
 		if !ok {
@@ -98,21 +104,25 @@ func (a *securityAnalyzer) checkHardcodedSecrets(ctx *Context, file *ast.File, p
 		for _, sp := range patterns {
 			if sp.regex.MatchString(text) {
 				findings = append(findings, Finding{
-					Analyzer:  a.Name(),
-					Category:  a.Category(),
-					Severity:  SeverityCritical,
-					Message:    fmt.Sprintf("potential %s in comment", sp.name),
-					File:       pos.Filename,
-					Line:       pos.Line,
-					RuleID:     sp.ruleID,
-					Suggestion: "Never put secrets in source code or comments. Use environment variables or a secret manager.",
+					Analyzer:   a.Name(),
+					Category:   a.Category(),
+					Severity:   SeverityCritical,
+					Message:     fmt.Sprintf("potential %s in comment", sp.name),
+					File:        pos.Filename,
+					Line:        pos.Line,
+					RuleID:      sp.ruleID,
+					Suggestion:  "Never put secrets in source code or comments. Use environment variables or a secret manager.",
 				})
 			}
 		}
 		return true
 	})
+	return findings
+}
 
-	// Secrets in string literals.
+// scanStringLiteralsForSecrets inspects string literals for secret patterns.
+func (a *securityAnalyzer) scanStringLiteralsForSecrets(ctx *Context, file *ast.File, patterns []secretPattern) []Finding {
+	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {
 		node, ok := n.(*ast.BasicLit)
 		if !ok || node.Kind != 9 { // STRING
@@ -123,20 +133,19 @@ func (a *securityAnalyzer) checkHardcodedSecrets(ctx *Context, file *ast.File, p
 		for _, sp := range patterns {
 			if sp.regex.MatchString(val) {
 				findings = append(findings, Finding{
-					Analyzer:  a.Name(),
-					Category:  a.Category(),
-					Severity:  SeverityCritical,
-					Message:    fmt.Sprintf("potential %s in string literal", sp.name),
-					File:       pos.Filename,
-					Line:       pos.Line,
-					RuleID:     sp.ruleID,
-					Suggestion: "Never hardcode secrets. Use environment variables or a secret manager.",
+					Analyzer:   a.Name(),
+					Category:   a.Category(),
+					Severity:   SeverityCritical,
+					Message:     fmt.Sprintf("potential %s in string literal", sp.name),
+					File:        pos.Filename,
+					Line:        pos.Line,
+					RuleID:      sp.ruleID,
+					Suggestion:  "Never hardcode secrets. Use environment variables or a secret manager.",
 				})
 			}
 		}
 		return true
 	})
-
 	return findings
 }
 
@@ -157,14 +166,14 @@ func (a *securityAnalyzer) checkUnsafeUsage(ctx *Context, file *ast.File) []Find
 		// unsafe.Pointer, unsafe.Sizeof, etc.
 		if ident.Name == "unsafe" {
 			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityWarning,
-				Message:    fmt.Sprintf("unsafe.%s usage", sel.Sel.Name),
-				File:       pos.Filename,
-				Line:       pos.Line,
-				RuleID:     "GLW-SC020",
-				Suggestion: "unsafe operations bypass Go's type and memory safety. Use only when absolutely necessary and well-documented.",
+				Analyzer:   a.Name(),
+				Category:   a.Category(),
+				Severity:   SeverityWarning,
+				Message:     fmt.Sprintf("unsafe.%s usage", sel.Sel.Name),
+				File:        pos.Filename,
+				Line:        pos.Line,
+				RuleID:      "GLW-SC020",
+				Suggestion:  "unsafe operations bypass Go's type and memory safety. Use only when absolutely necessary and well-documented.",
 			})
 		}
 		return true
@@ -200,14 +209,14 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Fin
 			if containsAny(val, "select ", "insert ", "update ", "delete ", "drop ", "create table", "where ") {
 				pos := ctx.FSET.Position(call.Pos())
 				findings = append(findings, Finding{
-					Analyzer:  a.Name(),
-					Category:  a.Category(),
-					Severity:  SeverityCritical,
-					Message:    "SQL query built via fmt.Sprintf — potential SQL injection",
-					File:       pos.Filename,
-					Line:       pos.Line,
-					RuleID:     "GLW-SC030",
-					Suggestion: "Use parameterized queries (db.Query(sql, args...)) instead of string formatting.",
+					Analyzer:   a.Name(),
+					Category:   a.Category(),
+					Severity:   SeverityCritical,
+					Message:     "SQL query built via fmt.Sprintf — potential SQL injection",
+					File:        pos.Filename,
+					Line:        pos.Line,
+					RuleID:      "GLW-SC030",
+					Suggestion:  "Use parameterized queries (db.Query(sql, args...)) instead of string formatting.",
 				})
 			}
 		}

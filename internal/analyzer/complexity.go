@@ -18,57 +18,17 @@ func (a *complexityAnalyzer) Category() Category  { return CategoryComplexity }
 func (a *complexityAnalyzer) Description() string { return "Cyclomatic and cognitive complexity hotspots" }
 
 func (a *complexityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	maxCyc := ctx.Config.MaxCyclomatic
-	if maxCyc == 0 {
-		maxCyc = 15
-	}
-	maxCog := ctx.Config.MaxCognitive
-	if maxCog == 0 {
-		maxCog = 20
-	}
-
+	maxCyc, maxCog := a.getThresholds(ctx)
 	var findings []Finding
 
-	for pkgPath, files := range ctx.SyntaxByPkg {
-		_ = pkgPath
+	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok {
 					continue
 				}
-				cyc := cyclomaticComplexity(fn)
-				cog := cognitiveComplexity(fn)
-
-				if cyc > maxCyc {
-					file2, line, endLine := nodeInfo(ctx.FSET, fn)
-					findings = append(findings, Finding{
-						Analyzer:   a.Name(),
-						Category:   a.Category(),
-						Severity:   severityForComplexity(cyc, maxCyc),
-						Message:     fmt.Sprintf("%s has cyclomatic complexity %d (max %d)", funcLabel(fn), cyc, maxCyc),
-						Detail:      fmt.Sprintf("cognitive complexity: %d", cog),
-						File:        file2,
-						Line:        line,
-						EndLine:     endLine,
-						RuleID:      "GLW-CX001",
-						Suggestion:  "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
-					})
-				} else if cog > maxCog {
-					file2, line, endLine := nodeInfo(ctx.FSET, fn)
-					findings = append(findings, Finding{
-						Analyzer:   a.Name(),
-						Category:   a.Category(),
-						Severity:   severityForComplexity(cog, maxCog),
-						Message:     fmt.Sprintf("%s has cognitive complexity %d (max %d)", funcLabel(fn), cog, maxCog),
-						Detail:      fmt.Sprintf("cyclomatic complexity: %d", cyc),
-						File:        file2,
-						Line:        line,
-						EndLine:     endLine,
-						RuleID:      "GLW-CX002",
-						Suggestion:  "Simplify the nesting or extract sub-expressions. High cognitive complexity makes the function hard to read.",
-					})
-				}
+				findings = append(findings, a.checkFunctionComplexity(ctx, fn, maxCyc, maxCog)...)
 			}
 		}
 	}
@@ -79,8 +39,70 @@ func (a *complexityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 		return findings[i].Line < findings[j].Line
 	})
-
 	return findings, nil
+}
+
+// getThresholds returns the configured or default cyclomatic/cognitive
+// complexity thresholds.
+func (a *complexityAnalyzer) getThresholds(ctx *Context) (maxCyc, maxCog int) {
+	maxCyc = ctx.Config.MaxCyclomatic
+	if maxCyc == 0 {
+		maxCyc = 15
+	}
+	maxCog = ctx.Config.MaxCognitive
+	if maxCog == 0 {
+		maxCog = 20
+	}
+	return maxCyc, maxCog
+}
+
+// checkFunctionComplexity checks a single function for cyclomatic or
+// cognitive complexity violations.
+func (a *complexityAnalyzer) checkFunctionComplexity(ctx *Context, fn *ast.FuncDecl, maxCyc, maxCog int) []Finding {
+	cyc := cyclomaticComplexity(fn)
+	cog := cognitiveComplexity(fn)
+
+	if cyc > maxCyc {
+		return []Finding{a.createCyclomaticFinding(ctx, fn, cyc, cog, maxCyc)}
+	}
+	if cog > maxCog {
+		return []Finding{a.createCognitiveFinding(ctx, fn, cyc, cog, maxCog)}
+	}
+	return nil
+}
+
+// createCyclomaticFinding builds a Finding for high cyclomatic complexity.
+func (a *complexityAnalyzer) createCyclomaticFinding(ctx *Context, fn *ast.FuncDecl, cyc, cog, maxCyc int) Finding {
+	file, line, endLine := nodeInfo(ctx.FSET, fn)
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   severityForComplexity(cyc, maxCyc),
+		Message:     fmt.Sprintf("%s has cyclomatic complexity %d (max %d)", funcLabel(fn), cyc, maxCyc),
+		Detail:      fmt.Sprintf("cognitive complexity: %d", cog),
+		File:        file,
+		Line:        line,
+		EndLine:     endLine,
+		RuleID:      "GLW-CX001",
+		Suggestion:  "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
+	}
+}
+
+// createCognitiveFinding builds a Finding for high cognitive complexity.
+func (a *complexityAnalyzer) createCognitiveFinding(ctx *Context, fn *ast.FuncDecl, cyc, cog, maxCog int) Finding {
+	file, line, endLine := nodeInfo(ctx.FSET, fn)
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   severityForComplexity(cog, maxCog),
+		Message:     fmt.Sprintf("%s has cognitive complexity %d (max %d)", funcLabel(fn), cog, maxCog),
+		Detail:      fmt.Sprintf("cyclomatic complexity: %d", cyc),
+		File:        file,
+		Line:        line,
+		EndLine:     endLine,
+		RuleID:      "GLW-CX002",
+		Suggestion:  "Simplify the nesting or extract sub-expressions. High cognitive complexity makes the function hard to read.",
+	}
 }
 
 // cyclomaticComplexity counts decision points + 1.

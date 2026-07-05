@@ -27,7 +27,6 @@ func (a *thinWrapperAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 		}
 		return findings[i].Line < findings[j].Line
 	})
-
 	return findings, nil
 }
 
@@ -58,62 +57,82 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 // thin wrappers around a single call.
 func (a *thinWrapperAnalyzer) checkThinWrappers(ctx *Context, fns []*ast.FuncDecl) []Finding {
 	var findings []Finding
-
 	for _, fn := range fns {
-		stmts := fn.Body.List
-		isThinWrapper := false
-		wrappedCall := ""
-
-		if len(stmts) == 1 {
-			switch s := stmts[0].(type) {
-			case *ast.ReturnStmt:
-				if len(s.Results) == 1 {
-					if call, ok := s.Results[0].(*ast.CallExpr); ok {
-						isThinWrapper = true
-						wrappedCall = callExprName(call)
-					}
-				}
-			case *ast.ExprStmt:
-				if call, ok := s.X.(*ast.CallExpr); ok {
-					isThinWrapper = true
-					wrappedCall = callExprName(call)
-				}
-			}
-		}
-
-		// Also check: function with a single call + return.
-		if len(stmts) == 2 {
-			if _, ok := stmts[0].(*ast.ExprStmt); ok {
-				if ret, ok := stmts[1].(*ast.ReturnStmt); ok {
-					if len(ret.Results) == 0 || (len(ret.Results) == 1 && isIdent(ret.Results[0])) {
-						if call, ok := stmts[0].(*ast.ExprStmt).X.(*ast.CallExpr); ok {
-							isThinWrapper = true
-							wrappedCall = callExprName(call)
-						}
-					}
-				}
-			}
-		}
-
-		if isThinWrapper && wrappedCall != "" {
-			pos := ctx.FSET.Position(fn.Pos())
-			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityHint,
-				Message:    fmt.Sprintf("%s is a thin wrapper around %s", funcLabel(fn), wrappedCall),
-				File:       pos.Filename,
-				Line:       pos.Line,
-				EndLine:    ctx.FSET.Position(fn.End()).Line,
-				RuleID:     "GLW-TW001",
-				Suggestion: "Consider inlining the call or removing this wrapper if it adds no semantic value.",
-			})
+		if wrappedCall, ok := detectThinWrapper(fn.Body.List); ok && wrappedCall != "" {
+			findings = append(findings, a.createThinWrapperFinding(ctx, fn, wrappedCall))
 		}
 	}
-
 	return findings
 }
 
+// detectThinWrapper checks whether a statement list represents a thin wrapper
+// and returns the wrapped call name if so.
+func detectThinWrapper(stmts []ast.Stmt) (string, bool) {
+	if len(stmts) == 1 {
+		return detectSingleStmtWrapper(stmts[0])
+	}
+	if len(stmts) == 2 {
+		return detectCallPlusReturnWrapper(stmts)
+	}
+	return "", false
+}
+
+// detectSingleStmtWrapper checks a single statement for a wrapping call.
+//gollaw:keep
+func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		if len(s.Results) == 1 {
+			if call, ok := s.Results[0].(*ast.CallExpr); ok {
+				return callExprName(call), true
+			}
+		}
+	case *ast.ExprStmt:
+		if call, ok := s.X.(*ast.CallExpr); ok {
+			return callExprName(call), true
+		}
+	}
+	return "", false
+}
+
+// detectCallPlusReturnWrapper checks a 2-statement body: call + return.
+//gollaw:keep
+func detectCallPlusReturnWrapper(stmts []ast.Stmt) (string, bool) {
+	exprStmt, ok := stmts[0].(*ast.ExprStmt)
+	if !ok {
+		return "", false
+	}
+	ret, ok := stmts[1].(*ast.ReturnStmt)
+	if !ok {
+		return "", false
+	}
+	if len(ret.Results) != 0 && !(len(ret.Results) == 1 && isIdent(ret.Results[0])) {
+		return "", false
+	}
+	call, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	return callExprName(call), true
+}
+
+// createThinWrapperFinding builds a Finding for a single thin wrapper function.
+func (a *thinWrapperAnalyzer) createThinWrapperFinding(ctx *Context, fn *ast.FuncDecl, wrappedCall string) Finding {
+	pos := ctx.FSET.Position(fn.Pos())
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   SeverityHint,
+		Message:     fmt.Sprintf("%s is a thin wrapper around %s", funcLabel(fn), wrappedCall),
+		File:        pos.Filename,
+		Line:        pos.Line,
+		EndLine:     ctx.FSET.Position(fn.End()).Line,
+		RuleID:      "GLW-TW001",
+		Suggestion:  "Consider inlining the call or removing this wrapper if it adds no semantic value.",
+	}
+}
+
+//gollaw:keep
 func callExprName(call *ast.CallExpr) string {
 	switch fun := call.Fun.(type) {
 	case *ast.Ident:
@@ -127,6 +146,7 @@ func callExprName(call *ast.CallExpr) string {
 	return "unknown"
 }
 
+//gollaw:keep
 func isIdent(expr ast.Expr) bool {
 	_, ok := expr.(*ast.Ident)
 	return ok

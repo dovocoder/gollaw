@@ -18,7 +18,22 @@ func (a *unusedFilesAnalyzer) Category() Category  { return CategoryUnused }
 func (a *unusedFilesAnalyzer) Description() string { return "Go files that are not part of any loaded package" }
 
 func (a *unusedFilesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	// Collect all .go files known to the loaded packages.
+	usedFiles := collectUsedFiles(ctx)
+	modDir := findModuleDir(ctx)
+	if modDir == "" {
+		return nil, nil
+	}
+
+	findings := a.findOrphanedFiles(modDir, usedFiles)
+
+	sort.Slice(findings, func(i, j int) bool {
+		return findings[i].File < findings[j].File
+	})
+	return findings, nil
+}
+
+// collectUsedFiles builds a set of all .go files known to loaded packages.
+func collectUsedFiles(ctx *Context) map[string]bool {
 	usedFiles := make(map[string]bool)
 	for _, pkg := range ctx.Packages {
 		for _, f := range pkg.GoFiles {
@@ -28,65 +43,79 @@ func (a *unusedFilesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 			usedFiles[absPath(f)] = true
 		}
 	}
+	return usedFiles
+}
 
-	// Walk the module directory looking for orphaned .go files.
-	var findings []Finding
-	var modDir string
+// findModuleDir locates the module root directory from the loaded packages.
+func findModuleDir(ctx *Context) string {
 	for _, pkg := range ctx.Packages {
 		if len(pkg.GoFiles) > 0 {
-			modDir = findGoModDir(filepath.Dir(pkg.GoFiles[0]))
+			modDir := findGoModDir(filepath.Dir(pkg.GoFiles[0]))
 			if modDir != "" {
-				break
+				return modDir
 			}
 		}
 	}
-	if modDir == "" {
-		return nil, nil
-	}
+	return ""
+}
 
+// findOrphanedFiles walks the module directory and returns findings for
+// .go files not in the usedFiles set.
+func (a *unusedFilesAnalyzer) findOrphanedFiles(modDir string, usedFiles map[string]bool) []Finding {
+	var findings []Finding
 	filepath.Walk(modDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
-		if info.IsDir() {
-			// Skip vendor, .git, etc.
-			name := info.Name()
-			if name == "vendor" || name == ".git" || name == "node_modules" || name == "testdata" {
-				return filepath.SkipDir
+		if shouldSkipDir(info) {
+			return filepath.SkipDir
+		}
+		if !info.IsDir() && shouldCheckFile(path) {
+			abs := absPath(path)
+			if !usedFiles[abs] {
+				findings = append(findings, a.createOrphanedFileFinding(path))
 			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-		// Skip test files — they're always "used" if the package is.
-		if strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
-		abs := absPath(path)
-		if !usedFiles[abs] {
-			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityWarning,
-				Message:    "orphaned Go file not part of any loaded package",
-				File:       path,
-				Line:       1,
-				RuleID:     "GLW-UF001",
-				Suggestion: "This file is not included in any package. Remove it, add a package declaration, or fix build tags.",
-			})
 		}
 		return nil
 	})
-
-	sort.Slice(findings, func(i, j int) bool {
-		return findings[i].File < findings[j].File
-	})
-
-	return findings, nil
+	return findings
 }
 
+// shouldSkipDir returns true for directories that should be excluded from
+// the walk (vendor, .git, node_modules, testdata).
+//gollaw:keep
+func shouldSkipDir(info os.FileInfo) bool {
+	if !info.IsDir() {
+		return false
+	}
+	name := info.Name()
+	return name == "vendor" || name == ".git" || name == "node_modules" || name == "testdata"
+}
+
+// shouldCheckFile returns true for non-test .go files that should be checked.
+//gollaw:keep
+func shouldCheckFile(path string) bool {
+	if !strings.HasSuffix(path, ".go") {
+		return false
+	}
+	return !strings.HasSuffix(path, "_test.go")
+}
+
+// createOrphanedFileFinding builds a Finding for a single orphaned file.
+func (a *unusedFilesAnalyzer) createOrphanedFileFinding(path string) Finding {
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   SeverityWarning,
+		Message:     "orphaned Go file not part of any loaded package",
+		File:        path,
+		Line:        1,
+		RuleID:      "GLW-UF001",
+		Suggestion:  "This file is not included in any package. Remove it, add a package declaration, or fix build tags.",
+	}
+}
+
+//gollaw:keep
 func absPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

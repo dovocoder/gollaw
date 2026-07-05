@@ -141,6 +141,31 @@ type markupContent struct {
 
 // ─── Main loop ────────────────────────────────────────────────────────
 
+// lspHandler represents a dispatch entry for an LSP method.
+type lspHandler struct {
+	// isExit causes the run loop to return immediately.
+	isExit bool
+	// handle dispatches the message. For requests, the id and params are passed.
+	// For notifications, only the params are meaningful (id is empty).
+	handle func(s *server, id json.RawMessage, params json.RawMessage)
+}
+
+// lspDispatch maps method names to their handlers.
+var lspDispatch = map[string]lspHandler{
+	"initialize": {
+		handle: func(s *server, id, params json.RawMessage) { s.handleInitialize(id, params) },
+	},
+	"initialized":              {handle: func(s *server, _, _ json.RawMessage) {}},
+	"shutdown":                 {handle: func(s *server, id, _ json.RawMessage) { s.sendResponse(id, nil) }},
+	"exit":                     {isExit: true, handle: func(s *server, _, _ json.RawMessage) {}},
+	"textDocument/didOpen":     {handle: func(s *server, _, params json.RawMessage) { s.handleDidOpen(params) }},
+	"textDocument/didChange":   {handle: func(s *server, _, params json.RawMessage) { s.handleDidChange(params) }},
+	"textDocument/didClose":    {handle: func(s *server, _, params json.RawMessage) { s.handleDidClose(params) }},
+	"textDocument/hover": {
+		handle: func(s *server, id, params json.RawMessage) { s.handleHover(id, params) },
+	},
+}
+
 func (s *server) run() error {
 	for {
 		msg, err := s.readMessage()
@@ -157,28 +182,17 @@ func (s *server) run() error {
 			continue
 		}
 
-		switch rpc.Method {
-		case "initialize":
-			s.handleInitialize(rpc.ID, rpc.Params)
-		case "initialized":
-			// notification — no response needed
-		case "shutdown":
-			s.sendResponse(rpc.ID, nil)
-		case "exit":
-			return nil
-		case "textDocument/didOpen":
-			s.handleDidOpen(rpc.Params)
-		case "textDocument/didChange":
-			s.handleDidChange(rpc.Params)
-		case "textDocument/didClose":
-			s.handleDidClose(rpc.Params)
-		case "textDocument/hover":
-			s.handleHover(rpc.ID, rpc.Params)
-		default:
-			// Only respond to requests (with an ID), not notifications.
-			if len(rpc.ID) > 0 {
-				s.sendError(rpc.ID, -32601, fmt.Sprintf("method not found: %s", rpc.Method))
+		if h, ok := lspDispatch[rpc.Method]; ok {
+			h.handle(s, rpc.ID, rpc.Params)
+			if h.isExit {
+				return nil
 			}
+			continue
+		}
+
+		// Unknown method — respond with error only for requests.
+		if len(rpc.ID) > 0 {
+			s.sendError(rpc.ID, -32601, fmt.Sprintf("method not found: %s", rpc.Method))
 		}
 	}
 }

@@ -18,7 +18,20 @@ func (a *dependencyAnalyzer) Category() Category  { return categoryDependencies 
 func (a *dependencyAnalyzer) Description() string { return "Import graph cycles and dependency hygiene" }
 
 func (a *dependencyAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	// Build adjacency list: pkg → set of imported pkg paths (only within our codebase).
+	adj := buildImportGraph(ctx)
+	var findings []Finding
+
+	findings = append(findings, a.findCycleFindings(ctx, adj)...)
+	findings = append(findings, a.findHighFanOutFindings(ctx, adj)...)
+
+	sort.Slice(findings, func(i, j int) bool {
+		return findings[i].File < findings[j].File
+	})
+	return findings, nil
+}
+
+// buildImportGraph constructs an adjacency list of internal package imports.
+func buildImportGraph(ctx *Context) map[string][]string {
 	adj := make(map[string][]string)
 	pkgSet := make(map[string]bool)
 	for _, pkg := range ctx.Packages {
@@ -26,63 +39,70 @@ func (a *dependencyAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	}
 	for _, pkg := range ctx.Packages {
 		for _, imported := range pkg.Imports {
-			if imported == nil {
+			if imported == nil || !pkgSet[imported.PkgPath] {
 				continue
 			}
-			if pkgSet[imported.PkgPath] {
-				adj[pkg.PkgPath] = append(adj[pkg.PkgPath], imported.PkgPath)
-			}
+			adj[pkg.PkgPath] = append(adj[pkg.PkgPath], imported.PkgPath)
 		}
 	}
+	return adj
+}
 
-	// Detect cycles using DFS with a recursion stack.
-	var findings []Finding
+// findCycleFindings detects and deduplicates import cycles.
+func (a *dependencyAnalyzer) findCycleFindings(ctx *Context, adj map[string][]string) []Finding {
 	cycles := detectCycles(adj)
-
-	// Dedup cycles (same cycle can be found from different starting points).
 	seenCycle := make(map[string]bool)
+	var findings []Finding
 	for _, cycle := range cycles {
-		// Normalize: find the lexicographically smallest node, rotate.
 		key := normalizeCycle(cycle)
 		if seenCycle[key] {
 			continue
 		}
 		seenCycle[key] = true
-
-		findings = append(findings, Finding{
-			Analyzer:  a.Name(),
-			Category:  a.Category(),
-			Severity:  SeverityCritical,
-			Message:    fmt.Sprintf("import cycle: %s", strings.Join(cycle, " → ")),
-			Detail:     fmt.Sprintf("cycle length: %d packages", len(cycle)),
-			File:       pkgFile(ctx, cycle[0]),
-			Line:       1,
-			RuleID:     "GLW-DE001",
-			Suggestion: "Break the cycle by extracting shared code into a lower-level package, or using interfaces to invert the dependency.",
-		})
+		findings = append(findings, a.createCycleFinding(ctx, cycle))
 	}
+	return findings
+}
 
-	// Check for dependency depth — packages that import too many others.
+// createCycleFinding builds a Finding for a single import cycle.
+func (a *dependencyAnalyzer) createCycleFinding(ctx *Context, cycle []string) Finding {
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   SeverityCritical,
+		Message:     fmt.Sprintf("import cycle: %s", strings.Join(cycle, " → ")),
+		Detail:      fmt.Sprintf("cycle length: %d packages", len(cycle)),
+		File:        pkgFile(ctx, cycle[0]),
+		Line:        1,
+		RuleID:      "GLW-DE001",
+		Suggestion:  "Break the cycle by extracting shared code into a lower-level package, or using interfaces to invert the dependency.",
+	}
+}
+
+// findHighFanOutFindings flags packages that import too many internal packages.
+func (a *dependencyAnalyzer) findHighFanOutFindings(ctx *Context, adj map[string][]string) []Finding {
+	var findings []Finding
 	for pkgPath, deps := range adj {
-		if len(deps) > 20 {
-			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityWarning,
-				Message:    fmt.Sprintf("package %s imports %d internal packages", pkgPath, len(deps)),
-				File:       pkgFile(ctx, pkgPath),
-				Line:       1,
-				RuleID:     "GLW-DE002",
-				Suggestion: "High fan-out may indicate this package has too many responsibilities. Consider splitting it.",
-			})
+		if len(deps) <= 20 {
+			continue
 		}
+		findings = append(findings, a.createHighFanOutFinding(ctx, pkgPath, len(deps)))
 	}
+	return findings
+}
 
-	sort.Slice(findings, func(i, j int) bool {
-		return findings[i].File < findings[j].File
-	})
-
-	return findings, nil
+// createHighFanOutFinding builds a Finding for a package with high fan-out.
+func (a *dependencyAnalyzer) createHighFanOutFinding(ctx *Context, pkgPath string, depCount int) Finding {
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   SeverityWarning,
+		Message:     fmt.Sprintf("package %s imports %d internal packages", pkgPath, depCount),
+		File:        pkgFile(ctx, pkgPath),
+		Line:        1,
+		RuleID:      "GLW-DE002",
+		Suggestion:  "High fan-out may indicate this package has too many responsibilities. Consider splitting it.",
+	}
 }
 
 // detectCycles finds all simple cycles in the directed graph using DFS.

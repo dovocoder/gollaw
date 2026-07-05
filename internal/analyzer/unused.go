@@ -57,9 +57,14 @@ func (a *unusedAnalyzer) collectExportedSymbols(ctx *Context) map[string]*usage 
 // checkExternalUsage scans all packages for references to exported objects
 // from other packages.
 func (a *unusedAnalyzer) checkExternalUsage(ctx *Context, exportedObjs map[string]*usage) {
-	// Scan all packages for references to exported objects.
+	a.markImportedPackageSymbols(ctx, exportedObjs)
+	a.markTypeUsageSymbols(ctx, exportedObjs)
+}
+
+// markImportedPackageSymbols marks all exported objects of a package as used
+// when another target package imports it.
+func (a *unusedAnalyzer) markImportedPackageSymbols(ctx *Context, exportedObjs map[string]*usage) {
 	for pkgPath, typPkg := range ctx.TypesByPkg {
-		// Check imports of this package.
 		for _, imported := range typPkg.Imports() {
 			importPath := imported.Path()
 			if _, isOurs := ctx.TypesByPkg[importPath]; !isOurs {
@@ -74,8 +79,11 @@ func (a *unusedAnalyzer) checkExternalUsage(ctx *Context, exportedObjs map[strin
 			}
 		}
 	}
+}
 
-	// Also scan uses via types.Info — look at each package's uses map.
+// markTypeUsageSymbols scans types.Info.Uses for external references to
+// exported objects.
+func (a *unusedAnalyzer) markTypeUsageSymbols(ctx *Context, exportedObjs map[string]*usage) {
 	for _, pkg := range ctx.Packages {
 		if pkg.TypesInfo == nil {
 			continue
@@ -86,14 +94,10 @@ func (a *unusedAnalyzer) checkExternalUsage(ctx *Context, exportedObjs map[strin
 				continue
 			}
 			ownerPkg := obj.Pkg()
-			if ownerPkg == nil {
+			if ownerPkg == nil || ownerPkg.Path() == usingPkgPath {
 				continue
 			}
-			ownerPath := ownerPkg.Path()
-			if ownerPath == usingPkgPath {
-				continue // same package, not an external use
-			}
-			key := ownerPath + "." + obj.Name()
+			key := ownerPkg.Path() + "." + obj.Name()
 			if u, ok := exportedObjs[key]; ok {
 				u.usedBy[usingPkgPath] = true
 			}

@@ -113,78 +113,98 @@ func (a *namingAnalyzer) checkVariableNames(ctx *Context, file *ast.File) []Find
 		if alias == pkgName {
 			pos := ctx.FSET.Position(imp.Pos())
 			findings = append(findings, Finding{
-				Analyzer:  a.Name(),
-				Category:  a.Category(),
-				Severity:  SeverityHint,
-				Message:    fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
-				File:       pos.Filename,
-				Line:       pos.Line,
-				RuleID:     "GLW-NM003",
-				Suggestion: "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
+				Analyzer:   a.Name(),
+				Category:   a.Category(),
+				Severity:   SeverityHint,
+				Message:     fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
+				File:        pos.Filename,
+				Line:        pos.Line,
+				RuleID:      "GLW-NM003",
+				Suggestion:  "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
 			})
 		}
 	}
 
 	return findings
 }
+
+// nonStandardInitialisms lists common initialisms that should be uppercase.
+var nonStandardInitialisms = []string{"Url", "Id", "Http", "Https", "Sql", "Json", "Xml", "Html", "Ssl", "Tcp", "Udp", "Ip", "Api"}
 
 func checkName(kind, name string, pos token.Position, exported bool) []Finding {
 	var findings []Finding
-
-	// Check for snake_case in Go (should be camelCase or PascalCase).
-	if strings.Contains(name, "_") && !strings.HasPrefix(name, "_") {
-		// Allow _test suffix for test doubles.
-		if !strings.HasSuffix(name, "_test") && !strings.HasSuffix(name, "_mock") {
-			findings = append(findings, Finding{
-				Analyzer:  "naming",
-				Category:  CategoryCodeSmell,
-				Severity:  SeverityHint,
-				Message:    fmt.Sprintf("%s %q uses snake_case — Go convention is camelCase/PascalCase", kind, name),
-				File:       pos.Filename,
-				Line:       pos.Line,
-				RuleID:     "GLW-NM001",
-				Suggestion: fmt.Sprintf("Rename to %s (remove underscores, capitalize each word).", toCamelCase(name)),
-			})
-		}
-	}
-
-	// Check for ALL_CAPS (should only be for constants, but even then
-	// Go convention is MixedCase).
-	if exported && isAllCaps(name) {
-		findings = append(findings, Finding{
-			Analyzer:  "naming",
-			Category:  CategoryCodeSmell,
-			Severity:  SeverityHint,
-			Message:    fmt.Sprintf("%s %q is ALL_CAPS — Go convention is PascalCase for exported names", kind, name),
-			File:       pos.Filename,
-			Line:       pos.Line,
-			RuleID:     "GLW-NM002",
-			Suggestion: fmt.Sprintf("Rename to %s (PascalCase, not ALL_CAPS).", toPascalCase(name)),
-		})
-	}
-
-	// Check for initialism casing (ID, URL, HTTP, etc. should be uppercase
-	// in exported names: e.g. ParseURL not ParseUrl).
+	findings = append(findings, checkSnakeCase(kind, name, pos)...)
 	if exported {
-		for _, bad := range []string{"Url", "Id", "Http", "Https", "Sql", "Json", "Xml", "Html", "Ssl", "Tcp", "Udp", "Ip", "Api"} {
-			if strings.Contains(name, bad) {
-				findings = append(findings, Finding{
-					Analyzer:  "naming",
-					Category:  CategoryCodeSmell,
-					Severity:  SeverityHint,
-					Message:    fmt.Sprintf("%s %q contains non-standard initialism %q — Go convention is uppercase (e.g. %s)", kind, name, bad, strings.ReplaceAll(name, bad, strings.ToUpper(bad))),
-					File:       pos.Filename,
-					Line:       pos.Line,
-					RuleID:     "GLW-NM004",
-					Suggestion: fmt.Sprintf("Rename to %s (use uppercase initialism).", strings.ReplaceAll(name, bad, strings.ToUpper(bad))),
-				})
-			}
-		}
+		findings = append(findings, checkAllCaps(kind, name, pos)...)
+		findings = append(findings, checkInitialisms(kind, name, pos)...)
 	}
-
 	return findings
 }
 
+// checkSnakeCase flags names containing underscores (excluding _test/_mock).
+//gollaw:keep
+func checkSnakeCase(kind, name string, pos token.Position) []Finding {
+	if !strings.Contains(name, "_") || strings.HasPrefix(name, "_") {
+		return nil
+	}
+	// Allow _test suffix for test doubles.
+	if strings.HasSuffix(name, "_test") || strings.HasSuffix(name, "_mock") {
+		return nil
+	}
+	return []Finding{{
+		Analyzer:   "naming",
+		Category:   CategoryCodeSmell,
+		Severity:   SeverityHint,
+		Message:     fmt.Sprintf("%s %q uses snake_case — Go convention is camelCase/PascalCase", kind, name),
+		File:        pos.Filename,
+		Line:        pos.Line,
+		RuleID:      "GLW-NM001",
+		Suggestion:  fmt.Sprintf("Rename to %s (remove underscores, capitalize each word).", toCamelCase(name)),
+	}}
+}
+
+// checkAllCaps flags exported ALL_CAPS names.
+//gollaw:keep
+func checkAllCaps(kind, name string, pos token.Position) []Finding {
+	if !isAllCaps(name) {
+		return nil
+	}
+	return []Finding{{
+		Analyzer:   "naming",
+		Category:   CategoryCodeSmell,
+		Severity:   SeverityHint,
+		Message:     fmt.Sprintf("%s %q is ALL_CAPS — Go convention is PascalCase for exported names", kind, name),
+		File:        pos.Filename,
+		Line:        pos.Line,
+		RuleID:      "GLW-NM002",
+		Suggestion:  fmt.Sprintf("Rename to %s (PascalCase, not ALL_CAPS).", toPascalCase(name)),
+	}}
+}
+
+// checkInitialisms flags non-standard initialism casing (Url → URL, Id → ID, etc.).
+//gollaw:keep
+func checkInitialisms(kind, name string, pos token.Position) []Finding {
+	var findings []Finding
+	for _, bad := range nonStandardInitialisms {
+		if !strings.Contains(name, bad) {
+			continue
+		}
+		fixed := strings.ReplaceAll(name, bad, strings.ToUpper(bad))
+		findings = append(findings, Finding{
+			Analyzer:   "naming",
+			Category:   CategoryCodeSmell,
+			Severity:   SeverityHint,
+			Message:     fmt.Sprintf("%s %q contains non-standard initialism %q — Go convention is uppercase (e.g. %s)", kind, name, bad, fixed),
+			File:        pos.Filename,
+			Line:        pos.Line,
+			RuleID:      "GLW-NM004",
+			Suggestion:  fmt.Sprintf("Rename to %s (use uppercase initialism).", fixed),
+		})
+	}
+	return findings
+}
+
+//gollaw:keep
 func isAllCaps(s string) bool {
 	for _, r := range s {
 		if r == '_' {
@@ -197,6 +217,7 @@ func isAllCaps(s string) bool {
 	return true
 }
 
+//gollaw:keep
 func toCamelCase(s string) string {
 	parts := strings.Split(s, "_")
 	result := parts[0]
@@ -208,6 +229,7 @@ func toCamelCase(s string) string {
 	return result
 }
 
+//gollaw:keep
 func toPascalCase(s string) string {
 	cc := toCamelCase(s)
 	if len(cc) > 0 {

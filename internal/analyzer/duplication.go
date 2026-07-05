@@ -43,8 +43,13 @@ func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 // including function-body-level and sliding-window-level blocks.
 func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[string][]dupBlock {
 	blocksByHash := make(map[string][]dupBlock)
+	a.collectFunctionBodyBlocks(ctx, minLines, blocksByHash)
+	a.collectStatementWindowBlocks(ctx, minLines, blocksByHash)
+	return blocksByHash
+}
 
-	// Collect function-body-level blocks.
+// collectFunctionBodyBlocks hashes entire function bodies for duplication.
+func (a *duplicationAnalyzer) collectFunctionBodyBlocks(ctx *Context, minLines int, blocksByHash map[string][]dupBlock) {
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
@@ -52,8 +57,6 @@ func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[stri
 				if !ok || fn.Body == nil {
 					continue
 				}
-
-				// Hash the entire function body and compare.
 				bodyHash, stmtCount := hashBlock(fn.Body)
 				if stmtCount < minLines {
 					continue
@@ -70,8 +73,11 @@ func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[stri
 			}
 		}
 	}
+}
 
-	// Also collect smaller statement-level duplication via a sliding window.
+// collectStatementWindowBlocks uses a sliding window over statements to
+// find smaller duplications.
+func (a *duplicationAnalyzer) collectStatementWindowBlocks(ctx *Context, minLines int, blocksByHash map[string][]dupBlock) {
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
@@ -83,8 +89,6 @@ func (a *duplicationAnalyzer) collectBlocks(ctx *Context, minLines int) map[stri
 			}
 		}
 	}
-
-	return blocksByHash
 }
 
 // findDuplicates identifies hashes with more than one block and returns
@@ -202,6 +206,7 @@ func hashBlock(block *ast.BlockStmt) (string, int) {
 }
 
 // hashStatements hashes a slice of statements.
+//gollaw:keep
 func hashStatements(stmts []ast.Stmt) string {
 	var buf bytes.Buffer
 	for _, stmt := range stmts {
