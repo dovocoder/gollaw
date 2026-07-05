@@ -11,7 +11,6 @@ import (
 )
 
 // TrendPoint is a single snapshot in time.
-//gollaw:keep
 type TrendPoint struct {
 	Timestamp    string `json:"timestamp"`
 	Score        int    `json:"score"`
@@ -20,7 +19,6 @@ type TrendPoint struct {
 }
 
 // TrendResult holds the trend data across multiple snapshots.
-//gollaw:keep
 type TrendResult struct {
 	Points    []TrendPoint `json:"points"`
 	Direction string       `json:"direction"` // improving, declining, stable

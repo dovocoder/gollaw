@@ -15,8 +15,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/reporter"
 )
 
-// actionVersion is hardcoded to avoid an import cycle with internal/cli.
-const actionVersion = "0.2.0"
+// actionVersion is set at build time via -ldflags to avoid an import cycle with internal/cli.
+var actionVersion = "0.2.0-dev"
 
 // RunAction runs a Gollaw audit on changed files and outputs the result
 // as a GitHub PR comment or GitHub Actions output.
@@ -24,7 +24,6 @@ const actionVersion = "0.2.0"
 // baseRef is the git ref to compare against (e.g. "origin/main").
 // dir is the working directory (empty = current directory).
 // format is the output format ("markdown" or "json").
-//gollaw:keep
 func RunAction(baseRef, dir string, format string) error {
 	if dir == "" {
 		dir = "."

@@ -15,7 +15,6 @@ import (
 )
 
 // Result holds the output of a full analysis run.
-//gollaw:keep
 type Result struct {
 	Findings []analyzer.Finding
 	Context  *analyzer.Context
@@ -33,7 +32,6 @@ type Result struct {
 //
 // If patterns is empty, ["./..."] is used.
 // version is used in the report header (pass the CLI/application version).
-//gollaw:keep
 func RunAnalysis(dir string, patterns []string, version string) (*Result, error) {
 	if len(patterns) == 0 {
 		patterns = []string{"./..."}
@@ -90,7 +88,6 @@ func RunAnalysis(dir string, patterns []string, version string) (*Result, error)
 
 // RunSelectedAnalyzers loads the codebase and runs only the analyzers
 // identified by name. Returns findings only (no report).
-//gollaw:keep
 func RunSelectedAnalyzers(dir string, names []string) ([]analyzer.Finding, *analyzer.Context, error) {
 	result, err := loader.Load(loader.LoadConfig{
 		Patterns: []string{"./..."},

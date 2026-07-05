@@ -14,7 +14,6 @@ import (
 // FindFunction searches all SSA packages in the context for a function
 // matching the given name. It checks package-level functions and methods on
 // named types (both value and pointer receivers).
-//gollaw:keep
 func FindFunction(ctx *analyzer.Context, name string) *ssa.Function {
 	if ctx.SSA == nil {
 		return nil
@@ -54,7 +53,6 @@ func FindFunction(ctx *analyzer.Context, name string) *ssa.Function {
 // MatchFunctionName checks if an SSA function matches the requested symbol name.
 // It matches against fn.Name(), fn.String(), "Type.Method", "pkg.func", and
 // the last component of a dotted name.
-//gollaw:keep
 func MatchFunctionName(fn *ssa.Function, name string) bool {
 	if fn.Name() == name {
 		return true
@@ -88,7 +86,6 @@ func MatchFunctionName(fn *ssa.Function, name string) bool {
 }
 
 // CleanFuncName returns a readable "pkg.funcName" form.
-//gollaw:keep
 func CleanFuncName(fn *ssa.Function) string {
 	if fn.Object() != nil && fn.Object().Pkg() != nil {
 		return fmt.Sprintf("%s.%s", fn.Object().Pkg().Name(), fn.Name())
@@ -100,14 +97,12 @@ func CleanFuncName(fn *ssa.Function) string {
 }
 
 // FuncLocation returns "file:line" for an SSA function.
-//gollaw:keep
 func FuncLocation(ctx *analyzer.Context, fn *ssa.Function) string {
 	pos := ctx.FSET.Position(fn.Pos())
 	return fmt.Sprintf("%s:%d", pos.Filename, pos.Line)
 }
 
 // FuncPackage returns the package path for a function.
-//gollaw:keep
 func FuncPackage(fn *ssa.Function) string {
 	if fn.Pkg != nil && fn.Pkg.Pkg != nil {
 		return fn.Pkg.Pkg.Path()
@@ -119,7 +114,6 @@ func FuncPackage(fn *ssa.Function) string {
 }
 
 // RecvTypeName extracts the receiver type name, unwrapping pointers.
-//gollaw:keep
 func RecvTypeName(t interface{}) string {
 	if n, ok := t.(interface {
 		Obj() interface{ Name() string }

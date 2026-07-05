@@ -23,7 +23,6 @@ type TraceResult struct {
 }
 
 // TraceNode is a single node in a call chain.
-//gollaw:keep
 type TraceNode struct {
 	Function string `json:"function"`
 	Location string `json:"location"` // file:line

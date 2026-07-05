@@ -67,7 +67,6 @@ func runGitLogForChurn(modDir string) (map[string]int, error) {
 }
 
 // countCommitsPerFile parses git log output into a file → commit-count map.
-//gollaw:keep
 func countCommitsPerFile(output string) map[string]int {
 	fileCommits := make(map[string]int)
 	for _, line := range strings.Split(output, "\n") {

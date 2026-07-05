@@ -12,7 +12,6 @@ import (
 )
 
 // ExportInfo describes a single exported identifier.
-//gollaw:keep
 type ExportInfo struct {
 	Name   string   `json:"name"`
 	Kind   string   `json:"kind"` // function, type, const, var
@@ -23,7 +22,6 @@ type ExportInfo struct {
 }
 
 // APIReport summarises the public API surface of the codebase.
-//gollaw:keep
 type APIReport struct {
 	TotalExports      int          `json:"totalExports"`
 	ConfirmedPublic   []ExportInfo `json:"confirmedPublic"`

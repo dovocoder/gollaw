@@ -156,7 +156,6 @@ func loadOrCreateConfig(configPath string) configYAML {
 	return defaultConfig()
 }
 
-//gollaw:keep
 // defaultConfig returns a fresh config with sensible defaults.
 func defaultConfig() configYAML {
 	return configYAML{
@@ -202,7 +201,6 @@ func mergePackThresholds(cfg *configYAML, pack *RulePack) {
 	applyThreshold(&cfg.Thresholds.MinDupLines, pack.Thresholds, "min-dup-lines")
 }
 
-//gollaw:keep
 // applyThreshold sets *dst from thresholds[key] if the key exists and is > 0.
 func applyThreshold(dst *int, thresholds map[string]int, key string) {
 	if v, ok := thresholds[key]; ok && v > 0 {

@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (without v prefix, e.g. 0.2.0)'
+        required: true
+        default: '0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          # macOS
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+            goos: darwin
+            goarch: amd64
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          # Windows
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            goos: windows
+            goarch: amd64
+          - os: windows
+            arch: arm64
+            runner: windows-latest
+            goos: windows
+            goarch: arm64
+          # FreeBSD
+          - os: freebsd
+            arch: amd64
+            runner: ubuntu-latest
+            goos: freebsd
+            goarch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v${{ github.event.inputs.version }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Building version $VERSION"
+
+      - name: Build binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          BINARY_NAME="gollaw"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="gollaw.exe"
+          fi
+          go build -trimpath -ldflags="-s -w -X github.com/dovocoder/gollaw/internal/cli.Version=${VERSION} -X github.com/dovocoder/gollaw/internal/action.actionVersion=${VERSION}" -o "dist/${BINARY_NAME}" .
+          cd dist && tar czf "gollaw-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "${BINARY_NAME}"
+          # Also create zip for Windows convenience
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "gollaw-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.zip" "${BINARY_NAME}"
+          fi
+          ls -lh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gollaw-${{ env.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/gollaw-*.tar.gz
+          if-no-files-found: error
+
+      - name: Upload zip artifact (Windows only)
+        if: matrix.goos == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gollaw-${{ env.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}-zip
+          path: dist/gollaw-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v${{ github.event.inputs.version }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          find artifacts -type f | sort
+          echo "---"
+          find artifacts -type f -exec ls -lh {} \;
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Gollaw ${{ env.VERSION }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          body: |
+            ## Gollaw ${{ env.VERSION }}
+
+            ### Downloads
+            | OS | Arch | File |
+            |---|---|---|
+            | Linux | amd64 | `gollaw-${{ env.VERSION }}-linux-amd64.tar.gz` |
+            | Linux | arm64 | `gollaw-${{ env.VERSION }}-linux-arm64.tar.gz` |
+            | macOS | amd64 (Intel) | `gollaw-${{ env.VERSION }}-darwin-amd64.tar.gz` |
+            | macOS | arm64 (Apple Silicon) | `gollaw-${{ env.VERSION }}-darwin-arm64.tar.gz` |
+            | Windows | amd64 | `gollaw-${{ env.VERSION }}-windows-amd64.tar.gz` / `.zip` |
+            | Windows | arm64 | `gollaw-${{ env.VERSION }}-windows-arm64.tar.gz` / `.zip` |
+            | FreeBSD | amd64 | `gollaw-${{ env.VERSION }}-freebsd-amd64.tar.gz` |
+
+            ### Install
+            ```bash
+            # Linux/macOS
+            tar xzf gollaw-${{ env.VERSION }}-$(uname -s | tr '[:upper:]' '[:lower:]')-amd64.tar.gz
+            sudo mv gollaw /usr/local/bin/
+            gollaw version
+
+            # Or with Go
+            go install github.com/dovocoder/gollaw@${{ env.VERSION }}
+            ```

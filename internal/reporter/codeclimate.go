@@ -10,7 +10,6 @@ import (
 )
 
 // CodeClimateIssue is a single issue in CodeClimate / GitLab Code Quality format.
-//gollaw:keep
 type CodeClimateIssue struct {
 	Description string             `json:"description"`
 	Fingerprint string             `json:"fingerprint"`
@@ -19,20 +18,17 @@ type CodeClimateIssue struct {
 }
 
 // CodeClimateLocation describes where an issue was found.
-//gollaw:keep
 type CodeClimateLocation struct {
 	Path  string              `json:"path"`
 	Lines CodeClimateLines     `json:"lines"`
 }
 
 // CodeClimateLines holds line range info.
-//gollaw:keep
 type CodeClimateLines struct {
 	Begin int `json:"begin"`
 }
 
 // FormatCodeClimate renders the report as a CodeClimate / GitLab Code Quality JSON array.
-//gollaw:keep
 func FormatCodeClimate(report *Report) ([]byte, error) {
 	issues := make([]CodeClimateIssue, 0, len(report.Findings))
 	for _, f := range report.Findings {

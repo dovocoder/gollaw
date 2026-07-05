@@ -10,7 +10,6 @@ import (
 )
 
 // RulePackRef references a rule pack from config.
-//gollaw:keep
 type RulePackRef struct {
 	Name      string
 	Enabled   bool
@@ -18,7 +17,6 @@ type RulePackRef struct {
 }
 
 // LoadRulePacks loads rule pack references from .gollaw.yaml.
-//gollaw:keep
 func LoadRulePacks(configPath string) ([]RulePackRef, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -34,7 +32,6 @@ func LoadRulePacks(configPath string) ([]RulePackRef, error) {
 }
 
 // ResolveRulePacks resolves rule pack references to actual rules.
-//gollaw:keep
 func ResolveRulePacks(refs []RulePackRef) ([]analyzer.Rule, error) {
 	var rules []analyzer.Rule
 	for _, ref := range refs {

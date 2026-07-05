@@ -12,7 +12,6 @@ import (
 )
 
 // MigrateResult holds the result of a migration.
-//gollaw:keep
 type MigrateResult struct {
 	Source    string   `json:"source"`
 	Migrated  int      `json:"migrated"`

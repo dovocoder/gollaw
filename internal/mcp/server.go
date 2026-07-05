@@ -151,15 +151,11 @@ func (s *server) run() error {
 // ─── Message framing ───────────────────────────────────────────────────
 
 // ─── JSON-RPC delegation ───────────────────────────────────────────────
-//gollaw:keep
 func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
-//gollaw:keep
 func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
-//gollaw:keep
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
 	s.conn.SendResponse(id, result)
 }
-//gollaw:keep
 func (s *server) sendError(id json.RawMessage, code int, message string) {
 	s.conn.SendError(id, code, message)
 }
@@ -1008,7 +1004,6 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 // sendToolError sends an error response for a tool call.
-//gollaw:keep
 func (s *server) sendToolError(id json.RawMessage, err error) {
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: fmt.Sprintf("Error: %v", err)}},
@@ -1017,7 +1012,6 @@ func (s *server) sendToolError(id json.RawMessage, err error) {
 }
 
 // sendToolJSON sends a JSON response for a tool call.
-//gollaw:keep
 func (s *server) sendToolJSON(id json.RawMessage, v interface{}) {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	s.sendResponse(id, callToolResult{

@@ -7,7 +7,6 @@ import (
 )
 
 // FixabilityInfo tracks whether a finding is auto-fixable.
-//gollaw:keep
 type FixabilityInfo struct {
 	Analyzer    string
 	RuleID      string
@@ -18,7 +17,6 @@ type FixabilityInfo struct {
 }
 
 // GetFixability returns fixability info for an analyzer+ruleID combination.
-//gollaw:keep
 func GetFixability(analyzerName, ruleID string) FixabilityInfo {
 	switch {
 	case analyzerName == "deadcode" && ruleID == "GLW-DC001":
@@ -41,19 +39,16 @@ func GetFixability(analyzerName, ruleID string) FixabilityInfo {
 }
 
 // IsFixable checks if a finding is auto-fixable.
-//gollaw:keep
 func IsFixable(f analyzer.Finding) bool {
 	return GetFixability(f.Analyzer, f.RuleID).IsFixable
 }
 
 // GetFixKind returns the fix kind for a finding.
-//gollaw:keep
 func GetFixKind(f analyzer.Finding) string {
 	return GetFixability(f.Analyzer, f.RuleID).FixKind
 }
 
 // ValidateFixability checks if a fixability entry is valid.
-//gollaw:keep
 func ValidateFixability(info FixabilityInfo) error {
 	if !info.IsFixable {
 		return nil

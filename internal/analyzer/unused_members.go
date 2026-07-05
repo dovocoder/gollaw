@@ -46,7 +46,6 @@ func collectFieldUsage(ctx *Context) map[string]bool {
 
 // fieldUsageKey builds the usage key for a selection, or returns "" if
 // the selection is not a struct field access on a named type.
-//gollaw:keep
 func fieldUsageKey(sel *types.Selection) string {
 	recv := sel.Recv()
 	if ptr, ok := recv.(*types.Pointer); ok {

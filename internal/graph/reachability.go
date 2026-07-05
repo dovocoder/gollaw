@@ -1,10 +1,8 @@
-//gollaw:keep
 package graph
 
 import "sort"
 
 // ReachabilityResult holds the output of BFS reachability analysis.
-//gollaw:keep
 type ReachabilityResult struct {
 	Reachable   []string
 	Unreachable []string
@@ -19,7 +17,6 @@ type ReachabilityResult struct {
 //
 // Entry points typically include main packages, packages with exported
 // symbols used by external importers, and test packages.
-//gollaw:keep
 func ComputeReachability(graph *ModuleGraph, entryPoints []string) *ReachabilityResult {
 	result := &ReachabilityResult{
 		EntryPoints: append([]string(nil), entryPoints...),

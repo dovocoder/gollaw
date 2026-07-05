@@ -1,4 +1,3 @@
-//gollaw:keep
 package cli
 
 import (
@@ -38,8 +37,8 @@ import (
 	"github.com/dovocoder/gollaw/internal/xref"
 )
 
-//gollaw:keep
-const Version = "0.2.0"
+// Version is set at build time via -ldflags "-X github.com/dovocoder/gollaw/internal/cli.Version=v0.2.0".
+var Version = "0.2.0-dev"
 
 // Run is the main CLI entry point.
 func Run(args []string) int {

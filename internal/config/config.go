@@ -11,7 +11,6 @@ import (
 )
 
 // ConfigFile is the YAML representation of .gollaw.yaml.
-//gollaw:keep
 type ConfigFile struct {
 	Analyzers  AnalyzersConfig  `yaml:"analyzers"`
 	Thresholds ThresholdsConfig `yaml:"thresholds"`
@@ -21,14 +20,12 @@ type ConfigFile struct {
 }
 
 // AnalyzersConfig holds enabled/disabled analyzer lists.
-//gollaw:keep
 type AnalyzersConfig struct {
 	Enabled  []string `yaml:"enabled"`
 	Disabled []string `yaml:"disabled"`
 }
 
 // ThresholdsConfig holds complexity and duplication thresholds.
-//gollaw:keep
 type ThresholdsConfig struct {
 	MaxCyclomatic    int `yaml:"max-cyclomatic"`
 	MaxCognitive     int `yaml:"max-cognitive"`
@@ -37,7 +34,6 @@ type ThresholdsConfig struct {
 }
 
 // SeverityConfig holds the minimum severity filter.
-//gollaw:keep
 type SeverityConfig struct {
 	Min string `yaml:"min"`
 }
@@ -56,7 +52,6 @@ type Config struct {
 const configFileName = ".gollaw.yaml"
 
 // Default returns a Config with sensible default values.
-//gollaw:keep
 func Default() *Config {
 	return &Config{
 		Analyzers: AnalyzersConfig{

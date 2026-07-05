@@ -17,14 +17,12 @@ import (
 
 // InspectTarget represents the target of inspection: either a file path or
 // a symbol name.
-//gollaw:keep
 type InspectTarget struct {
 	Value string
 	IsFile bool
 }
 
 // FileIdentity holds basic identity information about a file.
-//gollaw:keep
 type FileIdentity struct {
 	Path      string `json:"path"`
 	Package   string `json:"package"`
@@ -33,7 +31,6 @@ type FileIdentity struct {
 }
 
 // InspectResult holds the result of inspecting a file or symbol.
-//gollaw:keep
 type InspectResult struct {
 	Target         string           `json:"target"`
 	Kind           string           `json:"kind"` // "file" or "symbol"

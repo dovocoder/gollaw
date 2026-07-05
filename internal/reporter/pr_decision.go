@@ -8,7 +8,6 @@ import (
 )
 
 // PRGate is a single pass/fail gate in a PR decision.
-//gollaw:keep
 type PRGate struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
@@ -16,7 +15,6 @@ type PRGate struct {
 }
 
 // PRDecision is the machine-readable PR decision surface.
-//gollaw:keep
 type PRDecision struct {
 	Schema       string         `json:"schema"`
 	Conclusion   string         `json:"conclusion"`
@@ -29,7 +27,6 @@ type PRDecision struct {
 const healthThreshold = 70
 
 // FormatPRDecision renders a structured PR decision with pass/fail gates.
-//gollaw:keep
 func FormatPRDecision(report *Report) ([]byte, error) {
 	counts := map[string]int{
 		"critical": 0,

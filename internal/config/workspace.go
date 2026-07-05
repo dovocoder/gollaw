@@ -8,7 +8,6 @@ import (
 )
 
 // WorkspaceInfo holds Go workspace information from go.work.
-//gollaw:keep
 type WorkspaceInfo struct {
 	Root        string
 	Modules     []ModuleInfo
@@ -16,7 +15,6 @@ type WorkspaceInfo struct {
 }
 
 // ModuleInfo holds information about a single Go module.
-//gollaw:keep
 type ModuleInfo struct {
 	Path    string
 	Version string
@@ -24,7 +22,6 @@ type ModuleInfo struct {
 }
 
 // DetectWorkspace finds and parses go.work from the given directory.
-//gollaw:keep
 func DetectWorkspace(dir string) (*WorkspaceInfo, error) {
 	goWorkPath := findFileUpward(dir, "go.work")
 	if goWorkPath == "" {
@@ -61,7 +58,6 @@ func DetectWorkspace(dir string) (*WorkspaceInfo, error) {
 }
 
 // ResolveModule finds the go.mod for the current directory.
-//gollaw:keep
 func ResolveModule(dir string) (string, error) {
 	goModPath := findFileUpward(dir, "go.mod")
 	if goModPath == "" {
@@ -71,7 +67,6 @@ func ResolveModule(dir string) (string, error) {
 }
 
 // ListWorkspaceModules lists all modules in a workspace.
-//gollaw:keep
 func ListWorkspaceModules(dir string) ([]ModuleInfo, error) {
 	info, err := DetectWorkspace(dir)
 	if err != nil {
@@ -81,7 +76,6 @@ func ListWorkspaceModules(dir string) ([]ModuleInfo, error) {
 }
 
 // IsWorkspaceMode checks if go.work exists.
-//gollaw:keep
 func IsWorkspaceMode(dir string) bool {
 	return findFileUpward(dir, "go.work") != ""
 }

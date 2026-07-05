@@ -7,14 +7,12 @@ import (
 )
 
 // GlobMatcher matches file paths against a glob pattern.
-//gollaw:keep
 type GlobMatcher struct {
 	//gollaw:keep
 	pattern string
 }
 
 // ValidateGlob validates that a glob pattern is well-formed.
-//gollaw:keep
 func ValidateGlob(pattern string) error {
 	if pattern == "" {
 		return fmt.Errorf("empty pattern")
@@ -39,7 +37,6 @@ func ValidateGlob(pattern string) error {
 }
 
 // CompilePatterns compiles glob patterns to matchers.
-//gollaw:keep
 func CompilePatterns(patterns []string) ([]*GlobMatcher, error) {
 	var matchers []*GlobMatcher
 	for _, p := range patterns {
@@ -71,7 +68,6 @@ func (m *GlobMatcher) Match(path string) bool {
 }
 
 // MatchAny tests if a path matches any of the matchers.
-//gollaw:keep
 func MatchAny(matchers []*GlobMatcher, path string) bool {
 	for _, m := range matchers {
 		if m.Match(path) {
@@ -82,7 +78,6 @@ func MatchAny(matchers []*GlobMatcher, path string) bool {
 }
 
 // ListInvalidPatterns returns patterns that fail validation.
-//gollaw:keep
 func ListInvalidPatterns(patterns []string) []string {
 	var invalid []string
 	for _, p := range patterns {

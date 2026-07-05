@@ -9,7 +9,6 @@ import (
 )
 
 // PluginConfig configures an external plugin.
-//gollaw:keep
 type PluginConfig struct {
 	Name    string
 	Path    string
@@ -18,7 +17,6 @@ type PluginConfig struct {
 }
 
 // LoadPlugins loads plugin configuration from .gollaw.yaml.
-//gollaw:keep
 func LoadPlugins(configPath string) ([]PluginConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -34,7 +32,6 @@ func LoadPlugins(configPath string) ([]PluginConfig, error) {
 }
 
 // ValidatePlugin checks that a plugin path exists and is executable.
-//gollaw:keep
 func ValidatePlugin(p PluginConfig) error {
 	if p.Name == "" {
 		return fmt.Errorf("plugin name is required")
@@ -56,7 +53,6 @@ func ValidatePlugin(p PluginConfig) error {
 }
 
 // IsPluginAvailable checks if a plugin binary is available on PATH.
-//gollaw:keep
 func IsPluginAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil

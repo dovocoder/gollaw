@@ -8,7 +8,6 @@ import (
 )
 
 // ModuleGraph is the dependency graph of Go packages in a codebase.
-//gollaw:keep
 type ModuleGraph struct {
 	// Nodes holds one node per Go package, indexed by node ID.
 	Nodes []ModuleNode
@@ -26,7 +25,6 @@ type ModuleGraph struct {
 }
 
 // ModuleNode represents a single Go package in the graph.
-//gollaw:keep
 type ModuleNode struct {
 	Path         string
 	Name         string
@@ -36,7 +34,6 @@ type ModuleNode struct {
 }
 
 // ModuleEdge represents an import relationship from one package to another.
-//gollaw:keep
 type ModuleEdge struct {
 	Source  int
 	Target  int
