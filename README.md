@@ -58,20 +58,20 @@ Download from [GitHub Releases](https://github.com/dovocoder/gollaw/releases):
 
 ```bash
 # Linux/macOS
-tar xzf gollaw-v0.2.0-linux-amd64.tar.gz
+tar xzf gollaw_0.2.0_linux_amd64.tar.gz
 sudo mv gollaw /usr/local/bin/
 gollaw version
 ```
 
 | OS | Arch | Download |
 |---|---|---|
-| Linux | amd64 | `gollaw-*linux-amd64.tar.gz` |
-| Linux | arm64 | `gollaw-*linux-arm64.tar.gz` |
-| macOS (Intel) | amd64 | `gollaw-*darwin-amd64.tar.gz` |
-| macOS (Apple Silicon) | arm64 | `gollaw-*darwin-arm64.tar.gz` |
-| Windows | amd64 | `gollaw-*windows-amd64.zip` |
-| Windows | arm64 | `gollaw-*windows-arm64.zip` |
-| FreeBSD | amd64 | `gollaw-*freebsd-amd64.tar.gz` |
+| Linux | amd64 | `gollaw_*_linux_amd64.tar.gz` |
+| Linux | arm64 | `gollaw_*_linux_arm64.tar.gz` |
+| macOS (Intel) | amd64 | `gollaw_*_darwin_amd64.tar.gz` |
+| macOS (Apple Silicon) | arm64 | `gollaw_*_darwin_arm64.tar.gz` |
+| Windows | amd64 | `gollaw_*_windows_amd64.zip` |
+| Windows | arm64 | `gollaw_*_windows_arm64.zip` |
+| FreeBSD | amd64 | `gollaw_*_freebsd_amd64.tar.gz` |
 
 ### Build from source
 
@@ -115,7 +115,7 @@ gollaw analyze . --baseline
 | `--analyzers` | `-a` | all | Comma-separated analyzer names |
 | `--dir` | | `.` | Working directory |
 | `--rule` | | | Architecture rule: `"pkg must not import other"` |
-| `--min-severity` | | | Minimum severity: `critical`, `warning`, `info`, `hint` |
+| `--min-severity` | | `warning` | Minimum severity: `critical`, `warning`, `info`, `hint` |
 | `--max-cyclomatic` | | `15` | Max cyclomatic complexity |
 | `--max-cognitive` | | `20` | Max cognitive complexity |
 | `--min-dup-lines` | | `5` | Min lines for duplication detection |

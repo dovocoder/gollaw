@@ -10,9 +10,11 @@ type apiSurfaceAnalyzer struct{}
 
 func newAPISurfaceAnalyzer() *apiSurfaceAnalyzer { return &apiSurfaceAnalyzer{} }
 
-func (a *apiSurfaceAnalyzer) Name() string        { return "api-surface" }
-func (a *apiSurfaceAnalyzer) Category() Category   { return CategoryUnused }
-func (a *apiSurfaceAnalyzer) Description() string  { return "Tracks intentional public API vs accidental exports" }
+func (a *apiSurfaceAnalyzer) Name() string       { return "api-surface" }
+func (a *apiSurfaceAnalyzer) Category() Category { return CategoryUnused }
+func (a *apiSurfaceAnalyzer) Description() string {
+	return "Tracks intentional public API vs accidental exports"
+}
 
 func (a *apiSurfaceAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	symbolUsage := a.collectSymbolUsage(ctx)
@@ -76,6 +78,9 @@ func extractSymbolInfo(obj types.Object) (ownerPkg, name string, ok bool) {
 func (a *apiSurfaceAnalyzer) checkAccidentalExports(ctx *Context, symbolUsage map[string]map[string]bool) []Finding {
 	var findings []Finding
 	for pkgPath, pkg := range ctx.TypesByPkg {
+		if isInternalPackagePath(pkgPath) {
+			continue
+		}
 		scope := pkg.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
@@ -88,6 +93,10 @@ func (a *apiSurfaceAnalyzer) checkAccidentalExports(ctx *Context, symbolUsage ma
 		}
 	}
 	return findings
+}
+
+func isInternalPackagePath(pkgPath string) bool {
+	return strings.Contains(pkgPath, "/internal/")
 }
 
 // checkSymbolUsage checks a single exported symbol for accidental export status.
@@ -119,12 +128,12 @@ func (a *apiSurfaceAnalyzer) checkSymbolUsage(ctx *Context, pkgPath, name string
 		Analyzer:   a.Name(),
 		Category:   CategoryUnused,
 		Severity:   severity,
-		Message:     "exported " + name + " is only used within its own package — consider unexporting",
-		Detail:      "This exported symbol is not referenced by any external package.",
-		File:        pos.Filename,
-		Line:        pos.Line,
-		Suggestion:  "Unexport the symbol (rename to lowercase) if it's not part of the public API",
-		RuleID:      "GLW-AS001",
+		Message:    "exported " + name + " is only used within its own package — consider unexporting",
+		Detail:     "This exported symbol is not referenced by any external package.",
+		File:       pos.Filename,
+		Line:       pos.Line,
+		Suggestion: "Unexport the symbol (rename to lowercase) if it's not part of the public API",
+		RuleID:     "GLW-AS001",
 	}, true
 }
 

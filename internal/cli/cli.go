@@ -176,7 +176,6 @@ type analyzeOpts struct {
 func parseAnalyzeFlags(args []string) (analyzeOpts, int) {
 	o := analyzeOpts{
 		format:      "text",
-		minSeverity: "hint",
 		useConfig:   true,
 		useSuppress: true,
 	}
@@ -365,12 +364,16 @@ func buildAnalyzerConfig(o analyzeOpts) (analyzer.Config, int) {
 			MustNotUse: strings.TrimSpace(parts[1]),
 		})
 	}
-	sev, err := parseSeverity(o.minSeverity)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return analyzer.Config{}, 1
+	var sev analyzer.Severity
+	if o.minSeverity != "" {
+		parsed, err := parseSeverity(o.minSeverity)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return analyzer.Config{}, 1
+		}
+		sev = parsed
 	}
-	aCfg := analyzer.Config{
+	cliCfg := analyzer.Config{
 		Analyzers:     analyzerNames,
 		Rules:         archRules,
 		MinSeverity:   sev,
@@ -378,15 +381,16 @@ func buildAnalyzerConfig(o analyzeOpts) (analyzer.Config, int) {
 		MaxCognitive:  o.maxCog,
 		MinDupLines:   o.minDup,
 	}
+	base := config.Default()
 	if o.useConfig {
 		configPath := config.FindConfig(o.dir)
 		if configPath != "" {
 			if fc, err := config.Load(configPath); err == nil {
-				aCfg = config.Merge(aCfg, *fc)
+				base = fc
 			}
 		}
 	}
-	return aCfg, 0
+	return config.Merge(cliCfg, *base), 0
 }
 
 func runAnalyzers(ctx *analyzer.Context, aCfg analyzer.Config, useSuppress bool, useBaseline bool, dir string) ([]analyzer.Finding, []string) {
@@ -1249,7 +1253,7 @@ Common flags:
   --format <fmt>        Output: text, json, sarif, markdown (default: text)
   --analyzers <a,b,c>   Comma-separated analyzer names (default: all)
   --rule "A must not import B"  Architecture boundary rule (repeatable)
-  --min-severity <sev>  critical, warning, info, hint (default: hint)
+  --min-severity <sev>  critical, warning, info, hint (default: warning)
   --dir <path>          Working directory
   --no-config           Skip .gollaw.yaml
   --baseline            Only show new findings since baseline

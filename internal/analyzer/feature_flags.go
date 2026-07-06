@@ -10,9 +10,11 @@ type featureFlagsAnalyzer struct{}
 
 func newFeatureFlagsAnalyzer() *featureFlagsAnalyzer { return &featureFlagsAnalyzer{} }
 
-func (a *featureFlagsAnalyzer) Name() string        { return "feature-flags" }
-func (a *featureFlagsAnalyzer) Category() Category   { return CategoryCodeSmell }
-func (a *featureFlagsAnalyzer) Description() string  { return "Finds build tags and feature gates that may guard dead code" }
+func (a *featureFlagsAnalyzer) Name() string       { return "feature-flags" }
+func (a *featureFlagsAnalyzer) Category() Category { return CategoryCodeSmell }
+func (a *featureFlagsAnalyzer) Description() string {
+	return "Finds build tags and feature gates that may guard dead code"
+}
 
 func (a *featureFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	var findings []Finding
@@ -36,12 +38,12 @@ func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Fi
 				Analyzer:   a.Name(),
 				Category:   CategoryCodeSmell,
 				Severity:   SeverityInfo,
-				Message:     "file guarded by build tag: " + tag,
-				Detail:      "Functions in this file may be dead in the current build configuration.",
-				File:        ctx.FSET.Position(file.Pos()).Filename,
-				Line:        ctx.FSET.Position(cg.Pos()).Line,
-				Suggestion:  "Verify that code behind this build tag is still needed",
-				RuleID:      "GLW-FF001",
+				Message:    "file guarded by build tag: " + tag,
+				Detail:     "Functions in this file may be dead in the current build configuration.",
+				File:       ctx.FSET.Position(file.Pos()).Filename,
+				Line:       ctx.FSET.Position(cg.Pos()).Line,
+				Suggestion: "Verify that code behind this build tag is still needed",
+				RuleID:     "GLW-FF001",
 			})
 		}
 	}
@@ -144,18 +146,29 @@ func (a *featureFlagsAnalyzer) checkFeatureGateArgs(ctx *Context, call *ast.Call
 		return nil
 	}
 	flagName := strings.Trim(lit.Value, `"`)
+	if isOperationalEnvGate(flagName) {
+		return nil
+	}
 	pos := ctx.FSET.Position(call.Pos())
 	return []Finding{{
 		Analyzer:   a.Name(),
 		Category:   CategoryCodeSmell,
 		Severity:   SeverityInfo,
-		Message:     "feature gate via " + pkgName + "." + fn + `("` + flagName + `")`,
-		Detail:      "This env var or flag gates code. If the gate is never set, the guarded code may be dead.",
-		File:        pos.Filename,
-		Line:        pos.Line,
-		Suggestion:  "Consider using build tags instead of runtime flags for dead code elimination",
-		RuleID:      "GLW-FF002",
+		Message:    "feature gate via " + pkgName + "." + fn + `("` + flagName + `")`,
+		Detail:     "This env var or flag gates code. If the gate is never set, the guarded code may be dead.",
+		File:       pos.Filename,
+		Line:       pos.Line,
+		Suggestion: "Consider using build tags instead of runtime flags for dead code elimination",
+		RuleID:     "GLW-FF002",
 	}}
+}
+
+func isOperationalEnvGate(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	return strings.HasSuffix(upper, "_READONLY") ||
+		strings.HasSuffix(upper, "_READ_ONLY") ||
+		strings.HasSuffix(upper, "_DEBUG") ||
+		strings.HasSuffix(upper, "_VERBOSE")
 }
 
 func extractBuildTag(commentText string) string {

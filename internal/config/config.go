@@ -39,6 +39,7 @@ type severityConfig struct {
 }
 
 // Config is the resolved configuration combining file settings and ignore patterns.
+//
 //gollaw:ignore api-surface
 type Config struct {
 	Analyzers      analyzersConfig
@@ -53,6 +54,7 @@ type Config struct {
 const configFileName = ".gollaw.yaml"
 
 // Default returns a Config with sensible default values.
+//
 //gollaw:ignore api-surface
 func Default() *Config {
 	return &Config{
@@ -68,7 +70,7 @@ func Default() *Config {
 		},
 		Rules:          nil,
 		IgnorePatterns: []string{"vendor/**", "**/*_test.go", "**/testdata/**"},
-		MinSeverity:    analyzer.SeverityHint,
+		MinSeverity:    analyzer.SeverityWarning,
 	}
 }
 
@@ -188,12 +190,13 @@ func parseSeverity(s string) analyzer.Severity {
 //   - Thresholds: CLI wins if non-zero, otherwise file value.
 func Merge(cli analyzer.Config, file Config) analyzer.Config {
 	merged := analyzer.Config{
-		Analyzers:    cli.Analyzers,
-		Rules:        cli.Rules,
-		MinSeverity:  cli.MinSeverity,
-		MaxCyclomatic: cli.MaxCyclomatic,
-		MaxCognitive:  cli.MaxCognitive,
-		MinDupLines:   cli.MinDupLines,
+		Analyzers:        cli.Analyzers,
+		Rules:            cli.Rules,
+		MinSeverity:      cli.MinSeverity,
+		MaxCyclomatic:    cli.MaxCyclomatic,
+		MaxCognitive:     cli.MaxCognitive,
+		MaxFunctionLines: cli.MaxFunctionLines,
+		MinDupLines:      cli.MinDupLines,
 	}
 
 	if len(merged.Analyzers) == 0 && len(file.Analyzers.Enabled) > 0 {
@@ -210,6 +213,9 @@ func Merge(cli analyzer.Config, file Config) analyzer.Config {
 	}
 	if merged.MaxCognitive == 0 {
 		merged.MaxCognitive = file.Thresholds.MaxCognitive
+	}
+	if merged.MaxFunctionLines == 0 {
+		merged.MaxFunctionLines = file.Thresholds.MaxFunctionLines
 	}
 	if merged.MinDupLines == 0 {
 		merged.MinDupLines = file.Thresholds.MinDupLines

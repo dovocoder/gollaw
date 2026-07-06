@@ -13,9 +13,11 @@ type complexityAnalyzer struct{}
 
 func newComplexityAnalyzer() *complexityAnalyzer { return &complexityAnalyzer{} }
 
-func (a *complexityAnalyzer) Name() string        { return "complexity" }
-func (a *complexityAnalyzer) Category() Category  { return CategoryComplexity }
-func (a *complexityAnalyzer) Description() string { return "Cyclomatic and cognitive complexity hotspots" }
+func (a *complexityAnalyzer) Name() string       { return "complexity" }
+func (a *complexityAnalyzer) Category() Category { return CategoryComplexity }
+func (a *complexityAnalyzer) Description() string {
+	return "Cyclomatic and cognitive complexity hotspots"
+}
 
 func (a *complexityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	maxCyc, maxCog := a.getThresholds(ctx)
@@ -78,13 +80,13 @@ func (a *complexityAnalyzer) createCyclomaticFinding(ctx *Context, fn *ast.FuncD
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   severityForComplexity(cyc, maxCyc),
-		Message:     fmt.Sprintf("%s has cyclomatic complexity %d (max %d)", funcLabel(fn), cyc, maxCyc),
-		Detail:      fmt.Sprintf("cognitive complexity: %d", cog),
-		File:        file,
-		Line:        line,
-		EndLine:     endLine,
-		RuleID:      "GLW-CX001",
-		Suggestion:  "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
+		Message:    fmt.Sprintf("%s has cyclomatic complexity %d (max %d)", funcLabel(fn), cyc, maxCyc),
+		Detail:     fmt.Sprintf("cognitive complexity: %d", cog),
+		File:       file,
+		Line:       line,
+		EndLine:    endLine,
+		RuleID:     "GLW-CX001",
+		Suggestion: "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
 	}
 }
 
@@ -95,13 +97,13 @@ func (a *complexityAnalyzer) createCognitiveFinding(ctx *Context, fn *ast.FuncDe
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   severityForComplexity(cog, maxCog),
-		Message:     fmt.Sprintf("%s has cognitive complexity %d (max %d)", funcLabel(fn), cog, maxCog),
-		Detail:      fmt.Sprintf("cyclomatic complexity: %d", cyc),
-		File:        file,
-		Line:        line,
-		EndLine:     endLine,
-		RuleID:      "GLW-CX002",
-		Suggestion:  "Simplify the nesting or extract sub-expressions. High cognitive complexity makes the function hard to read.",
+		Message:    fmt.Sprintf("%s has cognitive complexity %d (max %d)", funcLabel(fn), cog, maxCog),
+		Detail:     fmt.Sprintf("cyclomatic complexity: %d", cyc),
+		File:       file,
+		Line:       line,
+		EndLine:    endLine,
+		RuleID:     "GLW-CX002",
+		Suggestion: "Simplify the nesting or extract sub-expressions. High cognitive complexity makes the function hard to read.",
 	}
 }
 
@@ -141,6 +143,7 @@ type cognitiveCounter struct {
 }
 
 // walk recursively inspects a node, accumulating cognitive complexity.
+//
 //gollaw:ignore thin-wrappers
 func (c *cognitiveCounter) walk(n ast.Node) {
 	ast.Inspect(n, func(node ast.Node) bool {
@@ -221,7 +224,7 @@ func severityForComplexity(val, max int) Severity {
 	if ratio >= 2.0 {
 		return SeverityWarning
 	}
-	return SeverityInfo
+	return SeverityHint
 }
 
 func funcLabel(fn *ast.FuncDecl) string {

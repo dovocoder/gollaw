@@ -13,15 +13,15 @@ import (
 
 // Report is the top-level output structure.
 type Report struct {
-	Tool       string             `json:"tool"`
-	Version    string             `json:"version"`
-	Timestamp  string             `json:"timestamp"`
-	Patterns   []string           `json:"patterns"`
-	Analyzers  []string           `json:"analyzers"`
-	Stats      CodebaseStats      `json:"stats"`
-	Findings   []analyzer.Finding `json:"findings"`
-	Summary    Summary            `json:"summary"`
-	HealthScore HealthScore       `json:"healthScore"`
+	Tool        string             `json:"tool"`
+	Version     string             `json:"version"`
+	Timestamp   string             `json:"timestamp"`
+	Patterns    []string           `json:"patterns"`
+	Analyzers   []string           `json:"analyzers"`
+	Stats       CodebaseStats      `json:"stats"`
+	Findings    []analyzer.Finding `json:"findings"`
+	Summary     Summary            `json:"summary"`
+	HealthScore HealthScore        `json:"healthScore"`
 }
 
 // CodebaseStats describes the analyzed codebase.
@@ -34,20 +34,22 @@ type CodebaseStats struct {
 }
 
 // Summary breaks down findings by severity and analyzer.
+//
 //gollaw:ignore api-surface
 type Summary struct {
-	Total           int                    `json:"total"`
-	BySeverity      map[string]int         `json:"bySeverity"`
-	ByAnalyzer      map[string]int         `json:"byAnalyzer"`
-	ByCategory      map[string]int         `json:"byCategory"`
+	Total      int            `json:"total"`
+	BySeverity map[string]int `json:"bySeverity"`
+	ByAnalyzer map[string]int `json:"byAnalyzer"`
+	ByCategory map[string]int `json:"byCategory"`
 }
 
 // HealthScore is a 0-100 score derived from findings.
+//
 //gollaw:ignore api-surface
 type HealthScore struct {
-	Score     int                `json:"score"`
-	Grade     string             `json:"grade"`
-	ByCategory map[string]int    `json:"byCategory"`
+	Score      int            `json:"score"`
+	Grade      string         `json:"grade"`
+	ByCategory map[string]int `json:"byCategory"`
 }
 
 // Reporter writes a report in a specific format.
@@ -94,6 +96,9 @@ func BuildReport(
 	stats CodebaseStats,
 	findings []analyzer.Finding,
 ) *Report {
+	if findings == nil {
+		findings = []analyzer.Finding{}
+	}
 	summary := Summary{
 		Total:      len(findings),
 		BySeverity: make(map[string]int),
@@ -107,14 +112,14 @@ func BuildReport(
 	}
 
 	return &Report{
-		Tool:       "gollaw",
-		Version:    version,
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		Patterns:   patterns,
-		Analyzers:  analyzerNames,
-		Stats:      stats,
-		Findings:   findings,
-		Summary:    summary,
+		Tool:        "gollaw",
+		Version:     version,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Patterns:    patterns,
+		Analyzers:   analyzerNames,
+		Stats:       stats,
+		Findings:    findings,
+		Summary:     summary,
 		HealthScore: computeHealthScore(findings),
 	}
 }

@@ -32,8 +32,9 @@ type Config struct {
 	// MinSeverity: findings below this are filtered.
 	MinSeverity Severity
 	// MaxComplexity threshold for the complexity analyzer.
-	MaxCyclomatic  int
-	MaxCognitive   int
+	MaxCyclomatic    int
+	MaxCognitive     int
+	MaxFunctionLines int
 	// MinDupLines: minimum duplicate block size.
 	MinDupLines int
 }
@@ -55,7 +56,7 @@ type Analyzer interface {
 // registry holds all available analyzers.
 type registry struct {
 	analyzers []Analyzer
-	byName map[string]Analyzer
+	byName    map[string]Analyzer
 }
 
 // NewRegistry creates a registry with all built-in analyzers.

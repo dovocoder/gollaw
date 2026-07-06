@@ -14,9 +14,11 @@ type hotspotsAnalyzer struct{}
 
 func newHotspotsAnalyzer() *hotspotsAnalyzer { return &hotspotsAnalyzer{} }
 
-func (a *hotspotsAnalyzer) Name() string        { return "hotspots" }
-func (a *hotspotsAnalyzer) Category() Category  { return CategoryComplexity }
-func (a *hotspotsAnalyzer) Description() string { return "Files with high complexity density (maintenance risk areas)" }
+func (a *hotspotsAnalyzer) Name() string       { return "hotspots" }
+func (a *hotspotsAnalyzer) Category() Category { return CategoryComplexity }
+func (a *hotspotsAnalyzer) Description() string {
+	return "Files with high complexity density (maintenance risk areas)"
+}
 
 // fileStats collects complexity and line metrics per file.
 type fileStats struct {
@@ -77,13 +79,13 @@ func (a *hotspotsAnalyzer) accumulateFileStats(ctx *Context, file *ast.File, fil
 func (a *hotspotsAnalyzer) findHotspots(fileMap map[string]*fileStats) []Finding {
 	var findings []Finding
 	for _, stats := range fileMap {
-		if stats.lineCount < 10 || stats.funcCount == 0 {
+		if stats.lineCount < 10 || stats.funcCount < 3 {
 			continue
 		}
 		density := float64(stats.totalComplex) / float64(stats.lineCount)
 		avgComplex := float64(stats.totalComplex) / float64(stats.funcCount)
 
-		if density > 0.5 || avgComplex > 10 {
+		if density > 0.5 || avgComplex > 15 {
 			findings = append(findings, a.createHotspotFinding(stats, density, avgComplex))
 		}
 	}
@@ -97,11 +99,11 @@ func (a *hotspotsAnalyzer) createHotspotFinding(stats *fileStats, density, avgCo
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   sev,
-		Message:     fmt.Sprintf("complexity hotspot: %d functions, %d total complexity (%.1f avg, %.2f density)", stats.funcCount, stats.totalComplex, avgComplex, density),
-		File:        stats.file,
-		Line:        1,
-		RuleID:      "GLW-HS001",
-		Suggestion:  "This file concentrates high complexity. Consider splitting it into smaller, focused files.",
+		Message:    fmt.Sprintf("complexity hotspot: %d functions, %d total complexity (%.1f avg, %.2f density)", stats.funcCount, stats.totalComplex, avgComplex, density),
+		File:       stats.file,
+		Line:       1,
+		RuleID:     "GLW-HS001",
+		Suggestion: "This file concentrates high complexity. Consider splitting it into smaller, focused files.",
 	}
 }
 

@@ -3,6 +3,9 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
+	"go/token"
+	"go/types"
 	"regexp"
 	"sort"
 	"strings"
@@ -15,9 +18,11 @@ type securityAnalyzer struct{}
 
 func newSecurityAnalyzer() *securityAnalyzer { return &securityAnalyzer{} }
 
-func (a *securityAnalyzer) Name() string        { return "security" }
-func (a *securityAnalyzer) Category() Category  { return CategoryCodeSmell }
-func (a *securityAnalyzer) Description() string { return "Hardcoded secrets, TODO/FIXME comments, unsafe usage, SQL injection patterns" }
+func (a *securityAnalyzer) Name() string       { return "security" }
+func (a *securityAnalyzer) Category() Category { return CategoryCodeSmell }
+func (a *securityAnalyzer) Description() string {
+	return "Hardcoded secrets, TODO/FIXME comments, unsafe usage, SQL injection patterns"
+}
 
 type secretPattern struct {
 	name   string
@@ -37,12 +42,13 @@ func (a *securityAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	}
 	todoPattern := regexp.MustCompile(`\b(TODO|FIXME|HACK|XXX|BUG)\b[:\s]`)
 
+	typeInfoByFile := typeInfoBySyntaxFile(ctx)
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			findings = append(findings, a.checkTODOComments(ctx, file, todoPattern)...)
 			findings = append(findings, a.checkHardcodedSecrets(ctx, file, secretPatterns)...)
 			findings = append(findings, a.checkUnsafeUsage(ctx, file)...)
-			findings = append(findings, a.checkSQLInjection(ctx, file)...)
+			findings = append(findings, a.checkSQLInjection(ctx, file, typeInfoByFile[file])...)
 		}
 	}
 
@@ -71,11 +77,11 @@ func (a *securityAnalyzer) checkTODOComments(ctx *Context, file *ast.File, todoP
 				Analyzer:   a.Name(),
 				Category:   a.Category(),
 				Severity:   SeverityInfo,
-				Message:     fmt.Sprintf("found %s", strings.TrimSpace(text)),
-				File:        pos.Filename,
-				Line:        pos.Line,
-				RuleID:      "GLW-SC010",
-				Suggestion:  "Resolve this technical debt item. TODOs and FIXMEs accumulate over time.",
+				Message:    fmt.Sprintf("found %s", strings.TrimSpace(text)),
+				File:       pos.Filename,
+				Line:       pos.Line,
+				RuleID:     "GLW-SC010",
+				Suggestion: "Resolve this technical debt item. TODOs and FIXMEs accumulate over time.",
 			})
 		}
 		return true
@@ -107,11 +113,11 @@ func (a *securityAnalyzer) scanCommentsForSecrets(ctx *Context, file *ast.File, 
 					Analyzer:   a.Name(),
 					Category:   a.Category(),
 					Severity:   SeverityCritical,
-					Message:     fmt.Sprintf("potential %s in comment", sp.name),
-					File:        pos.Filename,
-					Line:        pos.Line,
-					RuleID:      sp.ruleID,
-					Suggestion:  "Never put secrets in source code or comments. Use environment variables or a secret manager.",
+					Message:    fmt.Sprintf("potential %s in comment", sp.name),
+					File:       pos.Filename,
+					Line:       pos.Line,
+					RuleID:     sp.ruleID,
+					Suggestion: "Never put secrets in source code or comments. Use environment variables or a secret manager.",
 				})
 			}
 		}
@@ -125,7 +131,7 @@ func (a *securityAnalyzer) scanStringLiteralsForSecrets(ctx *Context, file *ast.
 	var findings []Finding
 	ast.Inspect(file, func(n ast.Node) bool {
 		node, ok := n.(*ast.BasicLit)
-		if !ok || node.Kind != 9 { // STRING
+		if !ok || node.Kind != token.STRING {
 			return true
 		}
 		val := node.Value
@@ -136,11 +142,11 @@ func (a *securityAnalyzer) scanStringLiteralsForSecrets(ctx *Context, file *ast.
 					Analyzer:   a.Name(),
 					Category:   a.Category(),
 					Severity:   SeverityCritical,
-					Message:     fmt.Sprintf("potential %s in string literal", sp.name),
-					File:        pos.Filename,
-					Line:        pos.Line,
-					RuleID:      sp.ruleID,
-					Suggestion:  "Never hardcode secrets. Use environment variables or a secret manager.",
+					Message:    fmt.Sprintf("potential %s in string literal", sp.name),
+					File:       pos.Filename,
+					Line:       pos.Line,
+					RuleID:     sp.ruleID,
+					Suggestion: "Never hardcode secrets. Use environment variables or a secret manager.",
 				})
 			}
 		}
@@ -169,11 +175,11 @@ func (a *securityAnalyzer) checkUnsafeUsage(ctx *Context, file *ast.File) []Find
 				Analyzer:   a.Name(),
 				Category:   a.Category(),
 				Severity:   SeverityWarning,
-				Message:     fmt.Sprintf("unsafe.%s usage", sel.Sel.Name),
-				File:        pos.Filename,
-				Line:        pos.Line,
-				RuleID:      "GLW-SC020",
-				Suggestion:  "unsafe operations bypass Go's type and memory safety. Use only when absolutely necessary and well-documented.",
+				Message:    fmt.Sprintf("unsafe.%s usage", sel.Sel.Name),
+				File:       pos.Filename,
+				Line:       pos.Line,
+				RuleID:     "GLW-SC020",
+				Suggestion: "unsafe operations bypass Go's type and memory safety. Use only when absolutely necessary and well-documented.",
 			})
 		}
 		return true
@@ -181,14 +187,11 @@ func (a *securityAnalyzer) checkUnsafeUsage(ctx *Context, file *ast.File) []Find
 	return findings
 }
 
-// checkSQLInjection detects SQL queries built via fmt.Sprintf.
-// It only flags fmt.Sprintf calls whose result is used in a database
-// query context (db.Query, db.Exec, db.QueryRow, etc.), not when the
-// result is used in error messages or logging.
-func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Finding {
+// checkSQLInjection detects SQL query strings that mix SQL syntax with dynamic
+// data at database execution sites. Constant SQL assembly is allowed; dynamic
+// values must be passed as bind parameters instead of interpolated into SQL.
+func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File, info *types.Info) []Finding {
 	var findings []Finding
-	// Track parent call expressions during traversal to detect error/log context.
-	var callStack []*ast.CallExpr
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -196,98 +199,125 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File) []Fin
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
-			// Track non-selector calls (e.g. emitWarning) for context detection
-			callStack = append(callStack, call)
 			return true
 		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok || ident.Name != "fmt" {
-			callStack = append(callStack, call)
+		argIndex, ok := sqlStringArgIndex(sel.Sel.Name)
+		if !ok || len(call.Args) <= argIndex {
 			return true
 		}
-		if sel.Sel.Name != "Sprintf" {
-			callStack = append(callStack, call)
+		arg := call.Args[argIndex]
+		if !isPotentialSQLExpr(info, arg) || !isDynamicSQLExpr(info, arg) {
 			return true
 		}
-		if len(call.Args) == 0 {
-			callStack = append(callStack, call)
-			return true
-		}
-		// Check if first arg is a string containing SQL keywords.
-		if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == 9 {
-			val := strings.ToLower(lit.Value)
-			if containsAny(val, "select ", "insert ", "update ", "delete ", "drop ", "create table", "where ") {
-				// Skip if the fmt.Sprintf result is used in an error message
-				// (fmt.Errorf, errors.Errorf, errors.Wrap) or logging context.
-				if isInErrorOrLogContext(callStack) {
-					callStack = append(callStack, call)
-					return true
-				}
-				pos := ctx.FSET.Position(call.Pos())
-				findings = append(findings, Finding{
-					Analyzer:   a.Name(),
-					Category:   a.Category(),
-					Severity:   SeverityCritical,
-					Message:     "SQL query built via fmt.Sprintf — potential SQL injection",
-					File:        pos.Filename,
-					Line:        pos.Line,
-					RuleID:      "GLW-SC030",
-					Suggestion:  "Use parameterized queries (db.Query(sql, args...)) instead of string formatting.",
-				})
-			}
-		}
-		callStack = append(callStack, call)
+		pos := ctx.FSET.Position(arg.Pos())
+		findings = append(findings, Finding{
+			Analyzer:   a.Name(),
+			Category:   a.Category(),
+			Severity:   SeverityCritical,
+			Message:    "SQL query mixes SQL text with dynamic values",
+			File:       pos.Filename,
+			Line:       pos.Line,
+			RuleID:     "GLW-SC030",
+			Suggestion: "Use bind parameters for values. For SQL identifiers, validate against a strict allow-list and quote the identifier.",
+		})
 		return true
 	})
 	return findings
 }
 
-// isInErrorOrLogContext checks if the current call is nested inside an
-// error-formatting or logging function call.
-func isInErrorOrLogContext(callStack []*ast.CallExpr) bool {
-	// The fmt.Sprintf call is the last item on the stack (not yet pushed).
-	// Check the parent call (second-to-last on the stack).
-	if len(callStack) == 0 {
+func typeInfoBySyntaxFile(ctx *Context) map[*ast.File]*types.Info {
+	out := make(map[*ast.File]*types.Info)
+	for _, pkg := range ctx.Packages {
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			out[file] = pkg.TypesInfo
+		}
+	}
+	return out
+}
+
+func sqlStringArgIndex(method string) (int, bool) {
+	switch method {
+	case "Exec", "Query", "QueryRow", "Prepare":
+		return 0, true
+	case "ExecContext", "QueryContext", "QueryRowContext", "PrepareContext":
+		return 1, true
+	default:
+		return 0, false
+	}
+}
+
+func isDynamicSQLExpr(info *types.Info, expr ast.Expr) bool {
+	if isConstStringExpr(info, expr) {
 		return false
 	}
-	parent := callStack[len(callStack)-1]
-	if sel, ok := parent.Fun.(*ast.SelectorExpr); ok {
-		if ident, ok := sel.X.(*ast.Ident); ok {
-			pkgName := ident.Name
-			funcName := sel.Sel.Name
-			// fmt.Errorf, errors.Wrap, errors.Wrapf, errors.Errorf, errors.New
-			if (pkgName == "fmt" && funcName == "Errorf") ||
-				(pkgName == "errors" && (funcName == "Wrap" || funcName == "Wrapf" || funcName == "Errorf" || funcName == "New")) {
-				return true
-			}
-			// log.Printf, logger.Error/Errorf/Warn/Warnf
-			if pkgName == "log" || pkgName == "logger" || pkgName == "slog" {
-				return true
-			}
-		}
-		// Method calls: a.emitWarning, a.emitError, a.logger.Warn, etc.
-		// Check the selector name for error/warning patterns.
-		funcName := sel.Sel.Name
-		if strings.Contains(strings.ToLower(funcName), "emit") ||
-			strings.Contains(strings.ToLower(funcName), "warn") ||
-			strings.Contains(funcName, "Error") || strings.Contains(funcName, "error") {
+	switch e := expr.(type) {
+	case *ast.CallExpr:
+		if isFmtSprintfCall(e) {
 			return true
 		}
-	}
-	// Also check for bare function calls: emitWarning, emitError, etc.
-	if ident, ok := parent.Fun.(*ast.Ident); ok {
-		name := ident.Name
-		if strings.Contains(name, "emit") || strings.Contains(name, "warn") ||
-			strings.Contains(name, "Error") || strings.Contains(name, "error") {
+	case *ast.BinaryExpr:
+		if e.Op == token.ADD && (isPotentialSQLExpr(info, e.X) || isPotentialSQLExpr(info, e.Y)) {
 			return true
 		}
 	}
 	return false
 }
 
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(s, sub) {
+func isPotentialSQLExpr(info *types.Info, expr ast.Expr) bool {
+	if s, ok := constStringValue(info, expr); ok {
+		return looksLikeSQL(s)
+	}
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return false
+		}
+		return looksLikeSQL(e.Value)
+	case *ast.BinaryExpr:
+		return e.Op == token.ADD && (isPotentialSQLExpr(info, e.X) || isPotentialSQLExpr(info, e.Y))
+	case *ast.CallExpr:
+		return isFmtSprintfCall(e) && len(e.Args) > 0 && isPotentialSQLExpr(info, e.Args[0])
+	default:
+		return false
+	}
+}
+
+func isConstStringExpr(info *types.Info, expr ast.Expr) bool {
+	_, ok := constStringValue(info, expr)
+	return ok
+}
+
+func constStringValue(info *types.Info, expr ast.Expr) (string, bool) {
+	if info == nil {
+		return "", false
+	}
+	tv, ok := info.Types[expr]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(tv.Value), true
+}
+
+func isFmtSprintfCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Sprintf" {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	return ok && ident.Name == "fmt"
+}
+
+func looksLikeSQL(s string) bool {
+	lower := strings.ToLower(s)
+	keywords := []string{
+		"select ", "insert ", "update ", "delete ", "drop ", "alter ",
+		"create ", "replace ", "pragma ", " where ", " from ", " into ",
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
 			return true
 		}
 	}

@@ -19,7 +19,7 @@ gollaw analyze . --baseline       # show only new findings vs baseline
 | `--analyzers` | `-a` | all | Comma-separated analyzer names |
 | `--dir` | | `.` | Working directory |
 | `--rule` | | | Architecture rule: `"pkg must not import other"` |
-| `--min-severity` | | | `critical`, `warning`, `info`, `hint` |
+| `--min-severity` | | `warning` | `critical`, `warning`, `info`, `hint` |
 | `--max-cyclomatic` | | `15` | Max cyclomatic complexity threshold |
 | `--max-cognitive` | | `20` | Max cognitive complexity threshold |
 | `--min-dup-lines` | | `5` | Min lines for duplication detection |

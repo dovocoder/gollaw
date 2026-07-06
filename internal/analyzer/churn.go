@@ -16,9 +16,11 @@ type churnAnalyzer struct{}
 
 func newChurnAnalyzer() *churnAnalyzer { return &churnAnalyzer{} }
 
-func (a *churnAnalyzer) Name() string        { return "churn" }
-func (a *churnAnalyzer) Category() Category  { return CategoryCodeSmell }
-func (a *churnAnalyzer) Description() string { return "Files with high git churn (frequent changes indicate maintenance hotspots)" }
+func (a *churnAnalyzer) Name() string       { return "churn" }
+func (a *churnAnalyzer) Category() Category { return CategoryCodeSmell }
+func (a *churnAnalyzer) Description() string {
+	return "Files with high git churn (frequent changes indicate maintenance hotspots)"
+}
 
 func (a *churnAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	modDir := findGitRoot(ctx)
@@ -90,11 +92,11 @@ func findMaxCommitCount(fileCommits map[string]int) int {
 	return maxCommits
 }
 
-// buildChurnFindings creates findings for files with 10+ commits.
+// buildChurnFindings creates findings for files with sustained high churn.
 func (a *churnAnalyzer) buildChurnFindings(modDir string, fileCommits map[string]int, maxCommits int) []Finding {
 	var findings []Finding
 	for file, count := range fileCommits {
-		if count < 10 {
+		if count < 50 {
 			continue
 		}
 		// Skip non-source files — churn in docs, configs, changelogs, and
@@ -145,12 +147,12 @@ func (a *churnAnalyzer) createChurnFinding(modDir, file string, count, maxCommit
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   sev,
-		Message:     fmt.Sprintf("high churn: %s changed %d times in the last 6 months", file, count),
-		Detail:      fmt.Sprintf("churn rate: %.0f%% of max (%d)", float64(count)/float64(maxCommits)*100, maxCommits),
-		File:        fullPath,
-		Line:        1,
-		RuleID:      "GLW-CH001",
-		Suggestion:  "High-churn files are maintenance hotspots. Consider splitting them, adding more tests, or stabilizing the interface.",
+		Message:    fmt.Sprintf("high churn: %s changed %d times in the last 6 months", file, count),
+		Detail:     fmt.Sprintf("churn rate: %.0f%% of max (%d)", float64(count)/float64(maxCommits)*100, maxCommits),
+		File:       fullPath,
+		Line:       1,
+		RuleID:     "GLW-CH001",
+		Suggestion: "High-churn files are maintenance hotspots. Consider splitting them, adding more tests, or stabilizing the interface.",
 	}
 }
 

@@ -14,13 +14,17 @@ type largeFunctionsAnalyzer struct{}
 
 func newLargeFunctionsAnalyzer() *largeFunctionsAnalyzer { return &largeFunctionsAnalyzer{} }
 
-func (a *largeFunctionsAnalyzer) Name() string        { return "large-functions" }
-func (a *largeFunctionsAnalyzer) Category() Category  { return CategoryCodeSmell }
-func (a *largeFunctionsAnalyzer) Description() string { return "Functions exceeding a line-count threshold" }
+func (a *largeFunctionsAnalyzer) Name() string       { return "large-functions" }
+func (a *largeFunctionsAnalyzer) Category() Category { return CategoryCodeSmell }
+func (a *largeFunctionsAnalyzer) Description() string {
+	return "Functions exceeding a line-count threshold"
+}
 
 func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	maxLines := 50 // default line threshold
-	maxStmts := 25 // default statement threshold
+	maxLines := ctx.Config.MaxFunctionLines
+	if maxLines == 0 {
+		maxLines = 50
+	}
 
 	var findings []Finding
 
@@ -45,25 +49,14 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 					continue
 				}
 				lineCount := end.Line - start.Line + 1
-				stmtCount := countStatements(fn.Body)
-
-				// Flag if EITHER line count OR statement count exceeds threshold.
-				// Statement count catches functions with real complexity even if
-				// they're short in lines (dense code). Line count catches functions
-				// with many comments/blank lines that are still hard to read.
-				// We skip functions flagged ONLY by line count when the statement
-				// count is very low (≤10) — that's almost certainly comments or
-				// verbose struct literals, not real complexity.
-				isLarge := lineCount > maxLines && stmtCount > 10 ||
-					stmtCount > maxStmts
-				if isLarge {
+				if lineCount > maxLines {
 					findings = append(findings, Finding{
 						Analyzer:   a.Name(),
 						Category:   a.Category(),
 						Severity:   severityForSize(lineCount, maxLines),
-						Message:     fmt.Sprintf("%s is %d lines long (max %d)", funcLabel(fn), lineCount, maxLines),
-						File:        start.Filename,
-						Line:        start.Line,
+						Message:    fmt.Sprintf("%s is %d lines long (max %d)", funcLabel(fn), lineCount, maxLines),
+						File:       start.Filename,
+						Line:       start.Line,
 						EndLine:    end.Line,
 						RuleID:     "GLW-LF001",
 						Suggestion: "Extract logic into smaller helper functions. Long functions are hard to test, review, and maintain.",
@@ -146,5 +139,5 @@ func severityForSize(lines, max int) Severity {
 	if lines > max*2 {
 		return SeverityWarning
 	}
-	return SeverityInfo
+	return SeverityHint
 }

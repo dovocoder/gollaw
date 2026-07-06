@@ -24,9 +24,11 @@ type duplicationAnalyzer struct{}
 
 func newDuplicationAnalyzer() *duplicationAnalyzer { return &duplicationAnalyzer{} }
 
-func (a *duplicationAnalyzer) Name() string        { return "duplication" }
-func (a *duplicationAnalyzer) Category() Category  { return CategoryDuplication }
-func (a *duplicationAnalyzer) Description() string { return "Duplicate code blocks via AST structural hashing" }
+func (a *duplicationAnalyzer) Name() string       { return "duplication" }
+func (a *duplicationAnalyzer) Category() Category { return CategoryDuplication }
+func (a *duplicationAnalyzer) Description() string {
+	return "Duplicate code blocks via AST structural hashing"
+}
 
 func (a *duplicationAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	minLines := ctx.Config.MinDupLines
@@ -57,12 +59,18 @@ func (a *duplicationAnalyzer) collectFunctionBodyBlocks(ctx *Context, minLines i
 				if !ok || fn.Body == nil {
 					continue
 				}
+				if isCobraConstructor(fn) {
+					continue
+				}
 				bodyHash, stmtCount := hashBlock(fn.Body)
 				if stmtCount < minLines {
 					continue
 				}
 				start := ctx.FSET.Position(fn.Body.Pos())
 				end := ctx.FSET.Position(fn.Body.End())
+				if isGeneratedFile(start.Filename) {
+					continue
+				}
 				b := dupBlock{
 					file:    start.Filename,
 					line:    start.Line,
@@ -83,6 +91,13 @@ func (a *duplicationAnalyzer) collectStatementWindowBlocks(ctx *Context, minLine
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Body == nil {
+					continue
+				}
+				if isCobraConstructor(fn) {
+					continue
+				}
+				start := ctx.FSET.Position(fn.Pos())
+				if isGeneratedFile(start.Filename) {
 					continue
 				}
 				collectStatementRuns(ctx.FSET, fn, minLines, blocksByHash)
@@ -112,6 +127,12 @@ func (a *duplicationAnalyzer) findDuplicates(blocksByHash map[string][]dupBlock)
 		// Report the first occurrence as the "original" and subsequent as duplicates.
 		orig := blocks[0]
 		for _, dup := range blocks[1:] {
+			if duplicateBlocksShareFunction(orig, dup) {
+				continue
+			}
+			if duplicateRangesOverlap(orig, dup) {
+				continue
+			}
 			dedupKey := fmt.Sprintf("%s:%d-%s:%d", orig.file, orig.line, dup.file, dup.line)
 			if seen[dedupKey] {
 				continue
@@ -121,6 +142,17 @@ func (a *duplicationAnalyzer) findDuplicates(blocksByHash map[string][]dupBlock)
 		}
 	}
 	return pairs
+}
+
+func duplicateBlocksShareFunction(a, b dupBlock) bool {
+	return a.file == b.file && a.decl == b.decl
+}
+
+func duplicateRangesOverlap(a, b dupBlock) bool {
+	if a.file != b.file {
+		return false
+	}
+	return a.line <= b.endLine && b.line <= a.endLine
 }
 
 // dupPair holds a duplicate block and its original.
@@ -139,9 +171,9 @@ func (a *duplicationAnalyzer) createDuplicationFindings(pairs []dupPair) []Findi
 		orig := p.orig
 		hash := p.hash
 		findings = append(findings, Finding{
-			Analyzer:  a.Name(),
-			Category:  a.Category(),
-			Severity:  SeverityWarning,
+			Analyzer:   a.Name(),
+			Category:   a.Category(),
+			Severity:   SeverityWarning,
 			Message:    fmt.Sprintf("duplicate code block (%d lines) in %s", dup.endLine-dup.line+1, dup.decl),
 			Detail:     fmt.Sprintf("first occurrence: %s:%d (hash: %s)", orig.file, orig.line, hash[:12]),
 			File:       dup.file,
@@ -237,7 +269,7 @@ func hashStatements(stmts []ast.Stmt) string {
 // to find smaller duplications.
 func collectStatementRuns(fset *token.FileSet, fn *ast.FuncDecl, minLines int, blocksByHash map[string][]dupBlock) {
 	stmts := fn.Body.List
-	windowSize := 4 // statements per window
+	windowSize := minLines
 
 	for i := 0; i+windowSize <= len(stmts); i++ {
 		run := stmts[i : i+windowSize]

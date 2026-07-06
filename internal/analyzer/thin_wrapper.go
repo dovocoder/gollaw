@@ -14,9 +14,11 @@ type thinWrapperAnalyzer struct{}
 
 func newThinWrapperAnalyzer() *thinWrapperAnalyzer { return &thinWrapperAnalyzer{} }
 
-func (a *thinWrapperAnalyzer) Name() string        { return "thin-wrappers" }
-func (a *thinWrapperAnalyzer) Category() Category  { return CategoryCodeSmell }
-func (a *thinWrapperAnalyzer) Description() string { return "Functions that just delegate to a single call (thin wrappers)" }
+func (a *thinWrapperAnalyzer) Name() string       { return "thin-wrappers" }
+func (a *thinWrapperAnalyzer) Category() Category { return CategoryCodeSmell }
+func (a *thinWrapperAnalyzer) Description() string {
+	return "Functions that just delegate to a single call (thin wrappers)"
+}
 
 func (a *thinWrapperAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	fns := a.collectFunctions(ctx)
@@ -82,6 +84,9 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				}
 				// Skip default-parameter wrappers (sendTextMessage → sendTextMessageWithSender)
 				if isDefaultParameterWrapper(fn) {
+					continue
+				}
+				if bindsDefaultArgument(fn) {
 					continue
 				}
 				// Skip semantic aliases (FileURI → String, canonicalJIDString → String)
@@ -349,6 +354,54 @@ func isDefaultParameterWrapper(fn *ast.FuncDecl) bool {
 	return false
 }
 
+func bindsDefaultArgument(fn *ast.FuncDecl) bool {
+	params := parameterNames(fn)
+	var found bool
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if _, ok := call.Fun.(*ast.Ident); !ok {
+			return true
+		}
+		for _, arg := range call.Args {
+			if isBoundDefaultArgument(arg, params) {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+func isBoundDefaultArgument(arg ast.Expr, params map[string]bool) bool {
+	switch expr := arg.(type) {
+	case *ast.Ident:
+		return !params[expr.Name]
+	case *ast.BasicLit:
+		return true
+	}
+	return false
+}
+
+func parameterNames(fn *ast.FuncDecl) map[string]bool {
+	params := make(map[string]bool)
+	if fn.Type == nil || fn.Type.Params == nil {
+		return params
+	}
+	for _, field := range fn.Type.Params.List {
+		for _, name := range field.Names {
+			params[name.Name] = true
+		}
+	}
+	return params
+}
+
 // isSemanticAlias returns true if the function is a semantic alias — a
 // wrapper that provides a more specific name for a general function
 // (e.g., FileURI → String, canonicalJIDString → String,
@@ -459,12 +512,18 @@ func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 				if hasComplexArgs(call) || isCallOnCompositeLiteral(call) {
 					return "", false
 				}
+				if !isDirectFunctionCall(call) {
+					return "", false
+				}
 				return callExprName(call), true
 			}
 		}
 	case *ast.ExprStmt:
 		if call, ok := s.X.(*ast.CallExpr); ok {
 			if hasComplexArgs(call) || isCallOnCompositeLiteral(call) {
+				return "", false
+			}
+			if !isDirectFunctionCall(call) {
 				return "", false
 			}
 			return callExprName(call), true
@@ -475,7 +534,9 @@ func detectSingleStmtWrapper(stmt ast.Stmt) (string, bool) {
 
 // isCallOnCompositeLiteral returns true if the call is a method call on
 // a composite literal (struct construction). For example:
-//   (&url.URL{Scheme: "file", Path: path}).String()
+//
+//	(&url.URL{Scheme: "file", Path: path}).String()
+//
 // This is not a thin wrapper — the function constructs a value and calls
 // a method on it, which is composition.
 func isCallOnCompositeLiteral(call *ast.CallExpr) bool {
@@ -499,6 +560,11 @@ func containsCompositeLiteral(expr ast.Expr) bool {
 		return containsCompositeLiteral(e.X)
 	}
 	return false
+}
+
+func isDirectFunctionCall(call *ast.CallExpr) bool {
+	_, ok := call.Fun.(*ast.Ident)
+	return ok
 }
 
 // hasComplexArgs returns true if any argument of the call is a function
@@ -564,12 +630,12 @@ func (a *thinWrapperAnalyzer) createThinWrapperFinding(ctx *Context, fn *ast.Fun
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityHint,
-		Message:     fmt.Sprintf("%s is a thin wrapper around %s", funcLabel(fn), wrappedCall),
-		File:        pos.Filename,
-		Line:        pos.Line,
-		EndLine:     ctx.FSET.Position(fn.End()).Line,
-		RuleID:      "GLW-TW001",
-		Suggestion:  "Consider inlining the call or removing this wrapper if it adds no semantic value.",
+		Message:    fmt.Sprintf("%s is a thin wrapper around %s", funcLabel(fn), wrappedCall),
+		File:       pos.Filename,
+		Line:       pos.Line,
+		EndLine:    ctx.FSET.Position(fn.End()).Line,
+		RuleID:     "GLW-TW001",
+		Suggestion: "Consider inlining the call or removing this wrapper if it adds no semantic value.",
 	}
 }
 
