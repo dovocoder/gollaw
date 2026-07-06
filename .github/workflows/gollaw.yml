@@ -1,7 +1,7 @@
 name: gollaw
 on:
   pull_request:
-    branches: [main, master]
+    branches: [master]
 
 jobs:
   analyze:
@@ -19,7 +19,7 @@ jobs:
         run: go install github.com/dovocoder/gollaw@latest
 
       - name: Run Gollaw audit
-        run: gollaw audit --base-ref origin/main --format markdown
+        run: gollaw audit --base-ref origin/master --format markdown
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_OUTPUT: ${{ env.GITHUB_OUTPUT }}
