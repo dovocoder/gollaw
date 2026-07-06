@@ -150,7 +150,7 @@ func (a *churnAnalyzer) createChurnFinding(modDir, file string, count, maxCommit
 		File:       fullPath,
 		Line:       1,
 		RuleID:     "GLW-CH001",
-		Suggestion: "High-churn files are maintenance hotspots. Consider splitting them, adding more tests, or stabilizing the interface.",
+		Suggestion: "Agent fix: stabilize this high-churn file by extracting volatile behavior behind focused helpers and adding regression tests around the changed paths.",
 	}
 }
 

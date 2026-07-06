@@ -21,6 +21,7 @@ type Context struct {
 	SyntaxByPkg map[string][]*ast.File
 	// Config holds user-provided options.
 	Config Config
+	index  *codeIndex
 }
 
 // Config configures the analysis run.

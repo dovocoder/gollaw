@@ -13,9 +13,11 @@ type unusedFilesAnalyzer struct{}
 
 func newUnusedFilesAnalyzer() *unusedFilesAnalyzer { return &unusedFilesAnalyzer{} }
 
-func (a *unusedFilesAnalyzer) Name() string        { return "unused-files" }
-func (a *unusedFilesAnalyzer) Category() Category  { return CategoryUnused }
-func (a *unusedFilesAnalyzer) Description() string { return "Go files that are not part of any loaded package" }
+func (a *unusedFilesAnalyzer) Name() string       { return "unused-files" }
+func (a *unusedFilesAnalyzer) Category() Category { return CategoryUnused }
+func (a *unusedFilesAnalyzer) Description() string {
+	return "Go files that are not part of any loaded package"
+}
 
 func (a *unusedFilesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	usedFiles := collectUsedFiles(ctx)
@@ -152,11 +154,11 @@ func (a *unusedFilesAnalyzer) createOrphanedFileFinding(path string) Finding {
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityWarning,
-		Message:     "orphaned Go file not part of any loaded package",
-		File:        path,
-		Line:        1,
-		RuleID:      "GLW-UF001",
-		Suggestion:  "This file is not included in any package. Remove it, add a package declaration, or fix build tags.",
+		Message:    "orphaned Go file not part of any loaded package",
+		File:       path,
+		Line:       1,
+		RuleID:     "GLW-UF001",
+		Suggestion: "Agent fix: remove this orphan file, add the missing package declaration, or correct its build tags so it belongs to an intended package.",
 	}
 }
 

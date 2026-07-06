@@ -11,9 +11,11 @@ type unusedOverridesAnalyzer struct{}
 
 func newUnusedOverridesAnalyzer() *unusedOverridesAnalyzer { return &unusedOverridesAnalyzer{} }
 
-func (a *unusedOverridesAnalyzer) Name() string        { return "unused-overrides" }
-func (a *unusedOverridesAnalyzer) Category() Category   { return CategoryUnused }
-func (a *unusedOverridesAnalyzer) Description() string   { return "Finds unused replace directives in go.mod" }
+func (a *unusedOverridesAnalyzer) Name() string       { return "unused-overrides" }
+func (a *unusedOverridesAnalyzer) Category() Category { return CategoryUnused }
+func (a *unusedOverridesAnalyzer) Description() string {
+	return "Finds unused replace directives in go.mod"
+}
 
 // replaceEntry holds a parsed replace directive's old path and source line.
 type replaceEntry struct {
@@ -103,12 +105,12 @@ func (a *unusedOverridesAnalyzer) findUnusedReplaces(goModPath string, replaces 
 			Analyzer:   a.Name(),
 			Category:   CategoryUnused,
 			Severity:   SeverityWarning,
-			Message:     "replace directive for " + r.oldPath + " is unused (module not imported)",
-			Detail:      "The module is not imported by any package in the codebase.",
-			File:        goModPath,
-			Line:        r.line,
-			Suggestion:  "Remove the replace directive from go.mod",
-			RuleID:      "GLW-UO001",
+			Message:    "replace directive for " + r.oldPath + " is unused (module not imported)",
+			Detail:     "The module is not imported by any package in the codebase.",
+			File:       goModPath,
+			Line:       r.line,
+			Suggestion: "Agent fix: remove this replace directive from go.mod, or add a real import/use of the replacement target if it is intentional.",
+			RuleID:     "GLW-UO001",
 		})
 	}
 	return findings

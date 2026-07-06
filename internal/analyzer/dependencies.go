@@ -78,7 +78,7 @@ func (a *dependencyAnalyzer) createCycleFinding(ctx *Context, cycle []string) Fi
 		File:       pkgFile(ctx, cycle[0]),
 		Line:       1,
 		RuleID:     "GLW-DE001",
-		Suggestion: "Break the cycle by extracting shared code into a lower-level package, or using interfaces to invert the dependency.",
+		Suggestion: "Agent fix: break the cycle by moving shared types/helpers into a lower-level package, or invert one edge with an interface owned by the caller.",
 	}
 }
 
@@ -116,7 +116,7 @@ func (a *dependencyAnalyzer) createHighFanOutFinding(ctx *Context, pkgPath strin
 		File:       pkgFile(ctx, pkgPath),
 		Line:       1,
 		RuleID:     "GLW-DE002",
-		Suggestion: "High fan-out may indicate this package has too many responsibilities. Consider splitting it.",
+		Suggestion: "Agent fix: split unrelated responsibilities out of this package, starting with imports that form independent groups or only serve one feature path.",
 	}
 }
 

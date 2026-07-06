@@ -46,7 +46,7 @@ func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Fi
 			Detail:     "Functions in this file may be dead in the current build configuration.",
 			File:       ctx.FSET.Position(file.Pos()).Filename,
 			Line:       ctx.FSET.Position(cg.Pos()).Line,
-			Suggestion: "Verify that code behind this build tag is still needed",
+			Suggestion: "Agent fix: verify this build tag is exercised by CI or documented target platforms. Remove the file or merge it into the default build if the variant is stale.",
 			RuleID:     "GLW-FF001",
 		})
 	}
@@ -161,7 +161,7 @@ func (a *featureFlagsAnalyzer) checkFeatureGateArgs(ctx *Context, call *ast.Call
 		Detail:     "This env var or flag gates code. If the gate is never set, the guarded code may be dead.",
 		File:       pos.Filename,
 		Line:       pos.Line,
-		Suggestion: "Consider using build tags instead of runtime flags for dead code elimination",
+		Suggestion: "Agent fix: replace stale runtime gates with build tags, or delete the gated branch if the flag/env path is no longer supported.",
 		RuleID:     "GLW-FF002",
 	}}
 }

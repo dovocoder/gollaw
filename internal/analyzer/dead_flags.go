@@ -11,9 +11,11 @@ type deadFlagsAnalyzer struct{}
 
 func newDeadFlagsAnalyzer() *deadFlagsAnalyzer { return &deadFlagsAnalyzer{} }
 
-func (a *deadFlagsAnalyzer) Name() string        { return "dead-flags" }
-func (a *deadFlagsAnalyzer) Category() Category   { return CategoryDeadCode }
-func (a *deadFlagsAnalyzer) Description() string  { return "Finds unused constants and flag registrations that are never read" }
+func (a *deadFlagsAnalyzer) Name() string       { return "dead-flags" }
+func (a *deadFlagsAnalyzer) Category() Category { return CategoryDeadCode }
+func (a *deadFlagsAnalyzer) Description() string {
+	return "Finds unused constants and flag registrations that are never read"
+}
 
 func (a *deadFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	var findings []Finding
@@ -101,12 +103,12 @@ func (a *deadFlagsAnalyzer) createUnusedConstantFinding(ctx *Context, name *ast.
 		Analyzer:   a.Name(),
 		Category:   CategoryDeadCode,
 		Severity:   SeverityInfo,
-		Message:     "constant " + name.Name + " is never used",
-		Detail:      "This exported constant is not referenced anywhere in the codebase.",
-		File:        pos.Filename,
-		Line:        pos.Line,
-		Suggestion:  "Remove the constant or use it",
-		RuleID:      "GLW-DF001",
+		Message:    "constant " + name.Name + " is never used",
+		Detail:     "This exported constant is not referenced anywhere in the codebase.",
+		File:       pos.Filename,
+		Line:       pos.Line,
+		Suggestion: "Agent fix: remove this constant, unexport it if it is package-local, or replace duplicate literals with this constant.",
+		RuleID:     "GLW-DF001",
 	}
 }
 
@@ -167,11 +169,11 @@ func (a *deadFlagsAnalyzer) createUnreadFlagFinding(ctx *Context, call *ast.Call
 		Analyzer:   a.Name(),
 		Category:   CategoryDeadCode,
 		Severity:   SeverityWarning,
-		Message:     "flag " + flagName + " is registered but may never be read",
-		Detail:      "This flag is registered via flag." + method + " but there is no .Get() or .Value access detected.",
-		File:        pos.Filename,
-		Line:        pos.Line,
-		Suggestion:  "Read the flag value with flag.Get() or remove the registration",
-		RuleID:      "GLW-DF002",
+		Message:    "flag " + flagName + " is registered but may never be read",
+		Detail:     "This flag is registered via flag." + method + " but there is no .Get() or .Value access detected.",
+		File:       pos.Filename,
+		Line:       pos.Line,
+		Suggestion: "Agent fix: read this registered flag through the parsed flag set, or remove the registration and any help text for it.",
+		RuleID:     "GLW-DF002",
 	}
 }

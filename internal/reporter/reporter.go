@@ -20,7 +20,7 @@ type Report struct {
 	Analyzers   []string           `json:"analyzers"`
 	Stats       CodebaseStats      `json:"stats"`
 	Findings    []analyzer.Finding `json:"findings"`
-	Summary     Summary            `json:"summary"`
+	Summary     summary            `json:"summary"`
 	HealthScore HealthScore        `json:"healthScore"`
 }
 
@@ -33,10 +33,10 @@ type CodebaseStats struct {
 	Decls     int `json:"decls"`
 }
 
-// Summary breaks down findings by severity and analyzer.
+// summary breaks down findings by severity and analyzer.
 //
 //gollaw:ignore api-surface
-type Summary struct {
+type summary struct {
 	Total      int            `json:"total"`
 	BySeverity map[string]int `json:"bySeverity"`
 	ByAnalyzer map[string]int `json:"byAnalyzer"`
@@ -99,7 +99,7 @@ func BuildReport(
 	if findings == nil {
 		findings = []analyzer.Finding{}
 	}
-	summary := Summary{
+	summary := summary{
 		Total:      len(findings),
 		BySeverity: make(map[string]int),
 		ByAnalyzer: make(map[string]int),

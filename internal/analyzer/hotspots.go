@@ -103,7 +103,7 @@ func (a *hotspotsAnalyzer) createHotspotFinding(stats *fileStats, density, avgCo
 		File:       stats.file,
 		Line:       1,
 		RuleID:     "GLW-HS001",
-		Suggestion: "This file concentrates high complexity. Consider splitting it into smaller, focused files.",
+		Suggestion: "Agent fix: split this hotspot by moving independent responsibilities into focused files or helpers, starting with the highest-complexity functions in the file.",
 	}
 }
 

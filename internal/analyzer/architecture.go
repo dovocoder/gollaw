@@ -71,12 +71,12 @@ func (a *architectureAnalyzer) createViolationFinding(pkg *packages.Package, imp
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityCritical,
-		Message:     fmt.Sprintf("architecture violation: %s imports %s", pkg.PkgPath, importedPath),
-		Detail:      fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
-		File:        file,
-		Line:        1,
-		RuleID:      "GLW-AR001",
-		Suggestion:  fmt.Sprintf("Move the shared logic to a package that both %s and %s can import, or use an interface to invert the dependency.", rule.Package, rule.MustNotUse),
+		Message:    fmt.Sprintf("architecture violation: %s imports %s", pkg.PkgPath, importedPath),
+		Detail:     fmt.Sprintf("rule: %q must not import %q", rule.Package, rule.MustNotUse),
+		File:       file,
+		Line:       1,
+		RuleID:     "GLW-AR001",
+		Suggestion: fmt.Sprintf("Agent fix: remove the import from %s to %s. Move shared code to a lower-level package both can import, or define an interface in %s and inject the implementation from outside the boundary.", rule.Package, rule.MustNotUse, rule.Package),
 	}
 }
 

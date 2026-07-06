@@ -81,7 +81,7 @@ func (a *securityAnalyzer) checkTODOComments(ctx *Context, file *ast.File, todoP
 				File:       pos.Filename,
 				Line:       pos.Line,
 				RuleID:     "GLW-SC010",
-				Suggestion: "Resolve this technical debt item. TODOs and FIXMEs accumulate over time.",
+				Suggestion: "Agent fix: resolve the TODO/FIXME now, convert it into a tracked issue with context, or remove it if it is stale.",
 			})
 		}
 		return true
@@ -117,7 +117,7 @@ func (a *securityAnalyzer) scanCommentsForSecrets(ctx *Context, file *ast.File, 
 					File:       pos.Filename,
 					Line:       pos.Line,
 					RuleID:     sp.ruleID,
-					Suggestion: "Never put secrets in source code or comments. Use environment variables or a secret manager.",
+					Suggestion: "Agent fix: remove the secret-like value, rotate it if real, and load it from environment or a secret manager instead.",
 				})
 			}
 		}
@@ -146,7 +146,7 @@ func (a *securityAnalyzer) scanStringLiteralsForSecrets(ctx *Context, file *ast.
 					File:       pos.Filename,
 					Line:       pos.Line,
 					RuleID:     sp.ruleID,
-					Suggestion: "Never hardcode secrets. Use environment variables or a secret manager.",
+					Suggestion: "Agent fix: replace the hardcoded secret-like literal with environment or secret-manager loading, and rotate the value if it was real.",
 				})
 			}
 		}
@@ -179,7 +179,7 @@ func (a *securityAnalyzer) checkUnsafeUsage(ctx *Context, file *ast.File) []Find
 				File:       pos.Filename,
 				Line:       pos.Line,
 				RuleID:     "GLW-SC020",
-				Suggestion: "unsafe operations bypass Go's type and memory safety. Use only when absolutely necessary and well-documented.",
+				Suggestion: "Agent fix: remove unsafe usage or isolate it behind a tiny reviewed helper with tests and a comment explaining why safe Go cannot be used.",
 			})
 		}
 		return true

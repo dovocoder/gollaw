@@ -19,13 +19,13 @@ const (
 type Category string
 
 const (
-	CategoryDeadCode      Category = "dead-code"
-	CategoryUnused        Category = "unused"
-	CategoryComplexity    Category = "complexity"
-	CategoryDuplication   Category = "duplication"
-	categoryDependencies  Category = "dependencies"
-	CategoryArchitecture  Category = "architecture"
-	CategoryCodeSmell     Category = "code-smell"
+	CategoryDeadCode     Category = "dead-code"
+	CategoryUnused       Category = "unused"
+	CategoryComplexity   Category = "complexity"
+	CategoryDuplication  Category = "duplication"
+	categoryDependencies Category = "dependencies"
+	CategoryArchitecture Category = "architecture"
+	CategoryCodeSmell    Category = "code-smell"
 )
 
 // Finding is a single issue discovered by an analyzer.
@@ -60,5 +60,3 @@ func nodeInfo(fset *token.FileSet, node ast.Node) (file string, line, endLine in
 	endLine = end.Line
 	return
 }
-
-

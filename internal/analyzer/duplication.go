@@ -65,7 +65,7 @@ func (a *duplicationAnalyzer) collectFunctionBodyBlocks(ctx *Context, minLines i
 				}
 				start := ctx.FSET.Position(fn.Body.Pos())
 				end := ctx.FSET.Position(fn.Body.End())
-				if isGeneratedFile(start.Filename) {
+				if isGeneratedPath(start.Filename) {
 					continue
 				}
 				b := dupBlock{
@@ -91,7 +91,7 @@ func (a *duplicationAnalyzer) collectStatementWindowBlocks(ctx *Context, minLine
 					continue
 				}
 				start := ctx.FSET.Position(fn.Pos())
-				if isGeneratedFile(start.Filename) {
+				if isGeneratedPath(start.Filename) {
 					continue
 				}
 				collectStatementRuns(ctx.FSET, fn, minLines, blocksByHash)
@@ -182,7 +182,7 @@ func (a *duplicationAnalyzer) createDuplicationFindings(pairs []dupPair) []Findi
 			Line:       dup.line,
 			EndLine:    dup.endLine,
 			RuleID:     "GLW-DP001",
-			Suggestion: "Extract the duplicated logic into a shared helper function.",
+			Suggestion: "Agent fix: extract the duplicated block into a shared helper with parameters for the differing values, then update both call sites and keep behavior covered by tests.",
 		})
 	}
 

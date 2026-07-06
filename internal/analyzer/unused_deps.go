@@ -256,7 +256,7 @@ func (a *unusedDepsAnalyzer) createUnusedDepFinding(goModPath, modPath, version 
 		File:       goModPath,
 		Line:       1,
 		RuleID:     "GLW-UD001",
-		Suggestion: "Remove this dependency from go.mod or run `go mod tidy`.",
+		Suggestion: "Agent fix: remove this dependency from go.mod and run `go mod tidy`, or add the missing import if the dependency is intentionally required.",
 	}
 }
 

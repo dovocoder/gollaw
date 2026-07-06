@@ -53,7 +53,7 @@ func (a *largeFunctionsAnalyzer) analyzeLargeFunctionsInFile(ctx *Context, file 
 		}
 		start := ctx.FSET.Position(fn.Pos())
 		end := ctx.FSET.Position(fn.End())
-		if isGeneratedFile(start.Filename) {
+		if isGeneratedPath(start.Filename) {
 			continue
 		}
 		lineCount := end.Line - start.Line + 1

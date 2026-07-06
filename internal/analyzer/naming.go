@@ -116,11 +116,11 @@ func (a *namingAnalyzer) checkVariableNames(ctx *Context, file *ast.File) []Find
 				Analyzer:   a.Name(),
 				Category:   a.Category(),
 				Severity:   SeverityHint,
-				Message:     fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
-				File:        pos.Filename,
-				Line:        pos.Line,
-				RuleID:      "GLW-NM003",
-				Suggestion:  "Remove the alias: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
+				Message:    fmt.Sprintf("import alias %q is the same as the package name — remove it", alias),
+				File:       pos.Filename,
+				Line:       pos.Line,
+				RuleID:     "GLW-NM003",
+				Suggestion: "Agent fix: remove the import alias unless it avoids a real package-name conflict: import \"" + path + "\" instead of import " + alias + " \"" + path + "\".",
 			})
 		}
 	}
@@ -154,11 +154,11 @@ func checkSnakeCase(kind, name string, pos token.Position) []Finding {
 		Analyzer:   "naming",
 		Category:   CategoryCodeSmell,
 		Severity:   SeverityHint,
-		Message:     fmt.Sprintf("%s %q uses snake_case — Go convention is camelCase/PascalCase", kind, name),
-		File:        pos.Filename,
-		Line:        pos.Line,
-		RuleID:      "GLW-NM001",
-		Suggestion:  fmt.Sprintf("Rename to %s (remove underscores, capitalize each word).", toCamelCase(name)),
+		Message:    fmt.Sprintf("%s %q uses snake_case — Go convention is camelCase/PascalCase", kind, name),
+		File:       pos.Filename,
+		Line:       pos.Line,
+		RuleID:     "GLW-NM001",
+		Suggestion: fmt.Sprintf("Agent fix: rename this identifier to %s and update all references in the package.", toCamelCase(name)),
 	}}
 }
 
@@ -171,11 +171,11 @@ func checkAllCaps(kind, name string, pos token.Position) []Finding {
 		Analyzer:   "naming",
 		Category:   CategoryCodeSmell,
 		Severity:   SeverityHint,
-		Message:     fmt.Sprintf("%s %q is ALL_CAPS — Go convention is PascalCase for exported names", kind, name),
-		File:        pos.Filename,
-		Line:        pos.Line,
-		RuleID:      "GLW-NM002",
-		Suggestion:  fmt.Sprintf("Rename to %s (PascalCase, not ALL_CAPS).", toPascalCase(name)),
+		Message:    fmt.Sprintf("%s %q is ALL_CAPS — Go convention is PascalCase for exported names", kind, name),
+		File:       pos.Filename,
+		Line:       pos.Line,
+		RuleID:     "GLW-NM002",
+		Suggestion: fmt.Sprintf("Agent fix: rename this exported identifier to %s and update all references in the package.", toPascalCase(name)),
 	}}
 }
 
@@ -191,11 +191,11 @@ func checkInitialisms(kind, name string, pos token.Position) []Finding {
 			Analyzer:   "naming",
 			Category:   CategoryCodeSmell,
 			Severity:   SeverityHint,
-			Message:     fmt.Sprintf("%s %q contains non-standard initialism %q — Go convention is uppercase (e.g. %s)", kind, name, bad, fixed),
-			File:        pos.Filename,
-			Line:        pos.Line,
-			RuleID:      "GLW-NM004",
-			Suggestion:  fmt.Sprintf("Rename to %s (use uppercase initialism).", fixed),
+			Message:    fmt.Sprintf("%s %q contains non-standard initialism %q — Go convention is uppercase (e.g. %s)", kind, name, bad, fixed),
+			File:       pos.Filename,
+			Line:       pos.Line,
+			RuleID:     "GLW-NM004",
+			Suggestion: fmt.Sprintf("Agent fix: rename this identifier to %s so the initialism uses standard Go capitalization.", fixed),
 		})
 	}
 	return findings
@@ -204,16 +204,16 @@ func checkInitialisms(kind, name string, pos token.Position) []Finding {
 // goInitialisms are standard Go initialisms that are always uppercase.
 // From https://github.com/golang/lint/blob/master/lint.go#L702
 var goInitialisms = map[string]bool{
-	"ACL":   true, "API":   true, "ASCII": true, "CPU":   true, "CSS":   true,
-	"DNS":   true, "EOF":   true, "GUID":  true, "HTML":  true, "HTTP":  true,
-	"HTTPS": true, "ID":    true, "IP":    true, "JSON":  true, "LHS":   true,
-	"QPS":   true, "RAM":   true, "RHS":   true, "RPC":   true, "SLA":   true,
-	"SMTP":  true, "SQL":   true, "SSH":   true, "TCP":   true, "TLS":   true,
-	"TTL":   true, "UDP":   true, "UI":    true, "UID":   true, "UUID":  true,
-	"URI":   true, "URL":   true, "UTF8":  true, "VM":    true, "XML":   true,
-	"XMPP":  true, "XSRF":  true, "XSS":   true, "DB":    true, "DBTX":  true,
-	"WA":    true, "FTS":   true, "FTS5":  true, "JID":   true, "CGO":   true,
-	"OS":    true, "IO":    true, "GPU":   true, "I18N":  true, "L10N":  true,
+	"ACL": true, "API": true, "ASCII": true, "CPU": true, "CSS": true,
+	"DNS": true, "EOF": true, "GUID": true, "HTML": true, "HTTP": true,
+	"HTTPS": true, "ID": true, "IP": true, "JSON": true, "LHS": true,
+	"QPS": true, "RAM": true, "RHS": true, "RPC": true, "SLA": true,
+	"SMTP": true, "SQL": true, "SSH": true, "TCP": true, "TLS": true,
+	"TTL": true, "UDP": true, "UI": true, "UID": true, "UUID": true,
+	"URI": true, "URL": true, "UTF8": true, "VM": true, "XML": true,
+	"XMPP": true, "XSRF": true, "XSS": true, "DB": true, "DBTX": true,
+	"WA": true, "FTS": true, "FTS5": true, "JID": true, "CGO": true,
+	"OS": true, "IO": true, "GPU": true, "I18N": true, "L10N": true,
 }
 
 func isAllCaps(s string) bool {

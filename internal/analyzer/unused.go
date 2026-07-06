@@ -36,6 +36,7 @@ func (a *unusedAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 // collectExportedSymbols builds a map of exported objects keyed by pkgPath.name.
 func (a *unusedAnalyzer) collectExportedSymbols(ctx *Context) map[string]*usage {
 	exportedObjs := make(map[string]*usage)
+	index := ctx.codeIndex()
 	for pkgPath, typPkg := range ctx.TypesByPkg {
 		scope := typPkg.Scope()
 		for _, name := range scope.Names() {
@@ -50,7 +51,7 @@ func (a *unusedAnalyzer) collectExportedSymbols(ctx *Context) map[string]*usage 
 			if isBuildInjectedVar(ctx, pkgPath, obj) {
 				continue
 			}
-			if isObjectInGeneratedFile(ctx, pkgPath, obj) {
+			if index.IsGeneratedObject(ctx, pkgPath, obj) {
 				continue
 			}
 			key := pkgPath + "." + name
@@ -66,32 +67,31 @@ func (a *unusedAnalyzer) collectExportedSymbols(ctx *Context) map[string]*usage 
 // checkExternalUsage scans all packages for references to exported objects
 // from other packages.
 func (a *unusedAnalyzer) checkExternalUsage(ctx *Context, exportedObjs map[string]*usage) {
-	a.markTypeUsageSymbols(ctx, exportedObjs)
+	a.markIndexedUsage(ctx.codeIndex().ExportedUsage, exportedObjs)
 	a.markSignatureAPIUsage(exportedObjs)
 }
 
-// markTypeUsageSymbols scans types.Info.Uses for external references to
-// exported objects.
-func (a *unusedAnalyzer) markTypeUsageSymbols(ctx *Context, exportedObjs map[string]*usage) {
-	for _, pkg := range ctx.Packages {
-		if pkg.TypesInfo == nil {
+func (a *unusedAnalyzer) markIndexedUsage(symbolUsage map[string]map[string]bool, exportedObjs map[string]*usage) {
+	for key, users := range symbolUsage {
+		u, ok := exportedObjs[key]
+		if !ok {
 			continue
 		}
-		usingPkgPath := pkg.PkgPath
-		for _, obj := range pkg.TypesInfo.Uses {
-			if obj == nil || !obj.Exported() {
+		ownerPkg := objectPackagePath(u.obj)
+		for usingPkg := range users {
+			if ownerPkg == "" || usingPkg == ownerPkg {
 				continue
 			}
-			ownerPkg := obj.Pkg()
-			if ownerPkg == nil || ownerPkg.Path() == usingPkgPath {
-				continue
-			}
-			key := ownerPkg.Path() + "." + obj.Name()
-			if u, ok := exportedObjs[key]; ok {
-				u.usedBy[usingPkgPath] = true
-			}
+			u.usedBy[usingPkg] = true
 		}
 	}
+}
+
+func objectPackagePath(obj types.Object) string {
+	if obj == nil || obj.Pkg() == nil {
+		return ""
+	}
+	return obj.Pkg().Path()
 }
 
 // markSignatureAPIUsage treats exported types in the signature of an
@@ -225,28 +225,6 @@ func isBuildInjectedVar(ctx *Context, pkgPath string, obj types.Object) bool {
 			if ok && genDeclBuildInjectsObject(gen, obj) {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func isObjectInGeneratedFile(ctx *Context, pkgPath string, obj types.Object) bool {
-	pos := ctx.FSET.Position(obj.Pos())
-	if pos.Filename != "" && isGeneratedFile(pos.Filename) {
-		return true
-	}
-	for _, file := range ctx.SyntaxByPkg[pkgPath] {
-		if file.Pos() <= obj.Pos() && obj.Pos() <= file.End() {
-			return fileHasGeneratedMarker(file)
-		}
-	}
-	return false
-}
-
-func fileHasGeneratedMarker(file *ast.File) bool {
-	for _, group := range file.Comments {
-		if strings.Contains(group.Text(), "Code generated") && strings.Contains(group.Text(), "DO NOT EDIT") {
-			return true
 		}
 	}
 	return false

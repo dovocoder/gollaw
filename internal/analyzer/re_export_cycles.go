@@ -10,9 +10,11 @@ type reExportCyclesAnalyzer struct{}
 
 func newReExportCyclesAnalyzer() *reExportCyclesAnalyzer { return &reExportCyclesAnalyzer{} }
 
-func (a *reExportCyclesAnalyzer) Name() string        { return "re-export-cycles" }
-func (a *reExportCyclesAnalyzer) Category() Category   { return categoryDependencies }
-func (a *reExportCyclesAnalyzer) Description() string  { return "Detects re-export cycles between packages" }
+func (a *reExportCyclesAnalyzer) Name() string       { return "re-export-cycles" }
+func (a *reExportCyclesAnalyzer) Category() Category { return categoryDependencies }
+func (a *reExportCyclesAnalyzer) Description() string {
+	return "Detects re-export cycles between packages"
+}
 
 func (a *reExportCyclesAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	reExports := a.collectReExports(ctx)
@@ -98,12 +100,12 @@ func createReExportCycleFinding(cycle []string) Finding {
 		Analyzer:   "re-export-cycles",
 		Category:   categoryDependencies,
 		Severity:   SeverityWarning,
-		Message:     "re-export cycle: " + strings.Join(cycle, " → "),
-		Detail:      "These packages re-export types from each other in a cycle, creating tight coupling.",
-		File:        cycle[0],
-		Line:        1,
-		Suggestion:  "Break the cycle by moving shared types to a common package",
-		RuleID:      "GLW-RC001",
+		Message:    "re-export cycle: " + strings.Join(cycle, " → "),
+		Detail:     "These packages re-export types from each other in a cycle, creating tight coupling.",
+		File:       cycle[0],
+		Line:       1,
+		Suggestion: "Agent fix: break the re-export cycle by moving shared types to a neutral package and importing that package directly from both sides.",
+		RuleID:     "GLW-RC001",
 	}
 }
 

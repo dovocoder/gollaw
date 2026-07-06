@@ -17,60 +17,7 @@ func (a *apiSurfaceAnalyzer) Description() string {
 }
 
 func (a *apiSurfaceAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
-	symbolUsage := a.collectSymbolUsage(ctx)
-	return a.checkAccidentalExports(ctx, symbolUsage), nil
-}
-
-// collectSymbolUsage builds a map of exported symbol keys to the set of
-// packages that reference them.
-func (a *apiSurfaceAnalyzer) collectSymbolUsage(ctx *Context) map[string]map[string]bool {
-	symbolUsage := make(map[string]map[string]bool)
-	for _, pkg := range ctx.Packages {
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		usingPkg := pkg.PkgPath
-		for _, obj := range pkg.TypesInfo.Uses {
-			ownerPkg, name, ok := extractSymbolInfo(obj)
-			if !ok || !obj.Exported() {
-				continue
-			}
-			key := ownerPkg + "." + name
-			if symbolUsage[key] == nil {
-				symbolUsage[key] = make(map[string]bool)
-			}
-			symbolUsage[key][usingPkg] = true
-		}
-	}
-	return symbolUsage
-}
-
-// extractSymbolInfo returns (ownerPkg, name, ok) for a types.Object if it
-// is a Func, TypeName, Const, or non-field Var with a package.
-func extractSymbolInfo(obj types.Object) (ownerPkg, name string, ok bool) {
-	switch v := obj.(type) {
-	case *types.Func:
-		if v.Pkg() == nil {
-			return "", "", false
-		}
-		return v.Pkg().Path(), v.Name(), true
-	case *types.TypeName:
-		if v.Pkg() == nil {
-			return "", "", false
-		}
-		return v.Pkg().Path(), v.Name(), true
-	case *types.Const:
-		if v.Pkg() == nil {
-			return "", "", false
-		}
-		return v.Pkg().Path(), v.Name(), true
-	case *types.Var:
-		if v.IsField() || v.Pkg() == nil {
-			return "", "", false
-		}
-		return v.Pkg().Path(), v.Name(), true
-	}
-	return "", "", false
+	return a.checkAccidentalExports(ctx, ctx.codeIndex().ExportedUsage), nil
 }
 
 // checkAccidentalExports finds exported symbols that are only used within
@@ -116,8 +63,7 @@ func (a *apiSurfaceAnalyzer) checkSymbolUsage(ctx *Context, pkgPath, name string
 	if pos.Filename == "" {
 		return Finding{}, false
 	}
-	// Skip generated files (sqlc, protoc, mockgen, etc.)
-	if isGeneratedFile(pos.Filename) {
+	if ctx.codeIndex().IsGeneratedObject(ctx, pkgPath, obj) {
 		return Finding{}, false
 	}
 	severity := SeverityInfo
@@ -132,22 +78,9 @@ func (a *apiSurfaceAnalyzer) checkSymbolUsage(ctx *Context, pkgPath, name string
 		Detail:     "This exported symbol is not referenced by any external package.",
 		File:       pos.Filename,
 		Line:       pos.Line,
-		Suggestion: "Unexport the symbol (rename to lowercase) if it's not part of the public API",
+		Suggestion: "Agent fix: unexport this symbol if it is package-local, or add a real external caller or public API documentation if it is intentional.",
 		RuleID:     "GLW-AS001",
 	}, true
-}
-
-// isGeneratedFile returns true if the file appears to be auto-generated.
-func isGeneratedFile(filename string) bool {
-	// Check for common generated file patterns in the path
-	for _, pattern := range []string{"/storedb/", "/sqlc/", "/mock/", "/mocks/", "/generated/", "/gen/"} {
-		if strings.Contains(filename, pattern) {
-			return true
-		}
-	}
-	// Could also check file content for "Code generated" comment,
-	// but path-based check is sufficient for most cases.
-	return false
 }
 
 // isOnlyUsedByOwnPackage returns true if the symbol is used only by its own
