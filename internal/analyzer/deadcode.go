@@ -20,6 +20,9 @@ import (
 //     from ssaPkg.Members — causing silent edge drops.
 //   - We walk SSA instructions directly, which handles intra-package calls,
 //     closures, and anonymous functions correctly.
+//   - We inspect every SSA operand so function values in migration tables,
+//     Cobra command callbacks, constructor registries, AddCommand trees, and
+//     package-level dispatch maps keep their handlers reachable.
 //   - Only exported API methods are seeded as entry points. Unexported
 //     methods must be reached by an actual call or function value reference;
 //     this makes the analyzer strict enough to catch private method drift.
@@ -55,7 +58,7 @@ func (a *deadCodeAnalyzer) collectAllFunctions(ssaByPkg map[string]*ssa.Package)
 		}
 		// Skip synthetic functions except init — init is synthetic but
 		// contains the package-level initializer code that references
-		// function values (e.g. migration tables, cobra AddCommand).
+		// function values (e.g. migration tables and Cobra command variables).
 		if fn.Syntax() == nil && fn.Name() != "init" {
 			return
 		}
@@ -192,6 +195,7 @@ func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[
 //
 //	var migrations = []migration{{up: migrateFoo}}
 //	rootCmd.AddCommand(newFooCmd())
+//	&cobra.Command{RunE: handler.run}
 //
 // where the function is referenced as a value, not called directly.
 func (a *deadCodeAnalyzer) scanFunctionOperands(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
