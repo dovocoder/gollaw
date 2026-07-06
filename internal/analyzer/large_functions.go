@@ -31,8 +31,19 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 				if !ok || fn.Body == nil {
 					continue
 				}
+				// Skip cobra command constructors — they're command
+				// configurations (flag declarations, usage strings), not
+				// logic functions. Their length is inherent to the number
+				// of flags, not to code complexity.
+				if isCobraConstructor(fn) {
+					continue
+				}
 				start := ctx.FSET.Position(fn.Pos())
 				end := ctx.FSET.Position(fn.End())
+				// Skip generated files (sqlc, mockgen, etc.)
+				if isGeneratedFile(start.Filename) {
+					continue
+				}
 				lineCount := end.Line - start.Line + 1
 				stmtCount := countStatements(fn.Body)
 
