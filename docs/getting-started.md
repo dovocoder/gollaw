@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.23 or later
+- Go 1.25 or later
 - A Go module (`go.mod` present)
 
 ## Installation

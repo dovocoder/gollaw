@@ -17,9 +17,11 @@ type unusedDepsAnalyzer struct{}
 
 func newUnusedDepsAnalyzer() *unusedDepsAnalyzer { return &unusedDepsAnalyzer{} }
 
-func (a *unusedDepsAnalyzer) Name() string        { return "unused-deps" }
-func (a *unusedDepsAnalyzer) Category() Category  { return CategoryUnused }
-func (a *unusedDepsAnalyzer) Description() string { return "go.mod dependencies that are never imported" }
+func (a *unusedDepsAnalyzer) Name() string       { return "unused-deps" }
+func (a *unusedDepsAnalyzer) Category() Category { return CategoryUnused }
+func (a *unusedDepsAnalyzer) Description() string {
+	return "go.mod dependencies that are never imported"
+}
 
 func (a *unusedDepsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	goModPath, required, err := a.parseGoMod(ctx)
@@ -159,38 +161,50 @@ func (a *unusedDepsAnalyzer) scanPlatformSpecificImports(ctx *Context, imported 
 	}
 	// Walk the module directory and parse imports from un-loaded .go files.
 	filepath.Walk(modDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			if info != nil && info.IsDir() && shouldSkipDir(info) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		abs := absPath(path)
-		if loadedFiles[abs] {
-			return nil
-		}
-		// Parse imports from this file.
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, src, parser.ImportsOnly)
-		if err != nil {
-			return nil
-		}
-		for _, imp := range file.Imports {
-			p := strings.Trim(imp.Path.Value, `"`)
-			if !strings.Contains(p, ".") {
-				continue
-			}
-			imported[p] = true
+		return scanPlatformFileImports(path, info, err, loadedFiles, imported)
+	})
+}
+
+func scanPlatformFileImports(path string, info os.FileInfo, walkErr error, loadedFiles, imported map[string]bool) error {
+	if walkErr != nil {
+		return nil
+	}
+	if info.IsDir() {
+		if shouldSkipDir(info) {
+			return filepath.SkipDir
 		}
 		return nil
-	})
+	}
+	if shouldSkipPlatformImportFile(path, loadedFiles) {
+		return nil
+	}
+	file, err := parseImportsOnly(path)
+	if err != nil {
+		return nil
+	}
+	for _, imp := range file.Imports {
+		p := strings.Trim(imp.Path.Value, `"`)
+		if strings.Contains(p, ".") {
+			imported[p] = true
+		}
+	}
+	return nil
+}
+
+func shouldSkipPlatformImportFile(path string, loadedFiles map[string]bool) bool {
+	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		return true
+	}
+	return loadedFiles[absPath(path)]
+}
+
+func parseImportsOnly(path string) (*ast.File, error) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	return parser.ParseFile(fset, path, src, parser.ImportsOnly)
 }
 
 // findUnusedDependencies compares required modules against imported modules
@@ -238,11 +252,11 @@ func (a *unusedDepsAnalyzer) createUnusedDepFinding(goModPath, modPath, version 
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityWarning,
-		Message:     fmt.Sprintf("unused dependency %s %s", modPath, version),
-		File:        goModPath,
-		Line:        1,
-		RuleID:      "GLW-UD001",
-		Suggestion:  "Remove this dependency from go.mod or run `go mod tidy`.",
+		Message:    fmt.Sprintf("unused dependency %s %s", modPath, version),
+		File:       goModPath,
+		Line:       1,
+		RuleID:     "GLW-UD001",
+		Suggestion: "Remove this dependency from go.mod or run `go mod tidy`.",
 	}
 }
 

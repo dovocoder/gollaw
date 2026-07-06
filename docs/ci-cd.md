@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
 
       - name: Install Gollaw
         run: go install github.com/dovocoder/gollaw@latest
@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
 
       - run: go install github.com/dovocoder/gollaw@latest
 
@@ -118,7 +118,7 @@ chmod +x .git/hooks/pre-commit
 # .gitlab-ci.yml
 gollaw:
   stage: test
-  image: golang:1.23
+  image: golang:1.25
   script:
     - go install github.com/dovocoder/gollaw@latest
     - gollaw analyze . --format json
@@ -160,10 +160,10 @@ gollaw analyze . --baseline --min-severity warning
 ## Docker
 
 ```dockerfile
-FROM golang:1.23 AS gollaw
+FROM golang:1.25 AS gollaw
 RUN go install github.com/dovocoder/gollaw@latest
 
-FROM golang:1.23
+FROM golang:1.25
 COPY --from=gollaw /go/bin/gollaw /usr/local/bin/
 COPY . /workspace
 WORKDIR /workspace

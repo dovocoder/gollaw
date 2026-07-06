@@ -116,27 +116,25 @@ func isNonSourceFile(file string) bool {
 	if strings.HasSuffix(file, "_test.go") {
 		return true
 	}
-	ext := filepath.Ext(file)
-	switch ext {
-	case ".md", ".txt", ".rst":
-		return true
-	case ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg":
-		return true
-	case ".sum", ".lock":
+	if nonSourceExtensions[filepath.Ext(file)] {
 		return true
 	}
-	// Check specific filenames
-	switch filepath.Base(file) {
-	case "CHANGELOG.md", "README.md", "LICENSE", "Makefile",
-		"package.json", "package-lock.json", "go.sum", "go.mod",
-		".gitignore", ".gitattributes", "Dockerfile", "docker-compose.yml":
+	if nonSourceNames[filepath.Base(file)] {
 		return true
 	}
-	// Check directories
-	if strings.Contains(file, "docs/") || strings.Contains(file, ".github/") {
-		return true
-	}
-	return false
+	return strings.Contains(file, "docs/") || strings.Contains(file, ".github/")
+}
+
+var nonSourceExtensions = map[string]bool{
+	".md": true, ".txt": true, ".rst": true,
+	".yml": true, ".yaml": true, ".json": true, ".toml": true, ".ini": true, ".cfg": true,
+	".sum": true, ".lock": true,
+}
+
+var nonSourceNames = map[string]bool{
+	"CHANGELOG.md": true, "README.md": true, "LICENSE": true, "Makefile": true,
+	"package.json": true, "package-lock.json": true, "go.sum": true, "go.mod": true,
+	".gitignore": true, ".gitattributes": true, "Dockerfile": true, "docker-compose.yml": true,
 }
 
 // createChurnFinding builds a single churn finding for a high-churn file.

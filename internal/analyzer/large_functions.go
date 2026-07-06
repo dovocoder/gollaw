@@ -30,39 +30,7 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Body == nil {
-					continue
-				}
-				// Skip cobra command constructors — they're command
-				// configurations (flag declarations, usage strings), not
-				// logic functions. Their length is inherent to the number
-				// of flags, not to code complexity.
-				if isCobraConstructor(fn) {
-					continue
-				}
-				start := ctx.FSET.Position(fn.Pos())
-				end := ctx.FSET.Position(fn.End())
-				// Skip generated files (sqlc, mockgen, etc.)
-				if isGeneratedFile(start.Filename) {
-					continue
-				}
-				lineCount := end.Line - start.Line + 1
-				if lineCount > maxLines {
-					findings = append(findings, Finding{
-						Analyzer:   a.Name(),
-						Category:   a.Category(),
-						Severity:   severityForSize(lineCount, maxLines),
-						Message:    fmt.Sprintf("%s is %d lines long (max %d)", funcLabel(fn), lineCount, maxLines),
-						File:       start.Filename,
-						Line:       start.Line,
-						EndLine:    end.Line,
-						RuleID:     "GLW-LF001",
-						Suggestion: "Agent fix: split this function by responsibility. Extract validation, query construction, loop body, switch case handling, or output formatting into private helpers until the caller is short orchestration.",
-					})
-				}
-			}
+			findings = append(findings, a.analyzeLargeFunctionsInFile(ctx, file, maxLines)...)
 		}
 	}
 
@@ -76,60 +44,38 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	return findings, nil
 }
 
-// countStatements counts the number of executable statements in a function body.
-// This excludes comments, blank lines, and provides a better measure of
-// function complexity than raw line count.
-func countStatements(body *ast.BlockStmt) int {
-	count := 0
-	for _, stmt := range body.List {
-		count += countStmt(stmt)
+func (a *largeFunctionsAnalyzer) analyzeLargeFunctionsInFile(ctx *Context, file *ast.File, maxLines int) []Finding {
+	var findings []Finding
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || isCobraConstructor(fn) {
+			continue
+		}
+		start := ctx.FSET.Position(fn.Pos())
+		end := ctx.FSET.Position(fn.End())
+		if isGeneratedFile(start.Filename) {
+			continue
+		}
+		lineCount := end.Line - start.Line + 1
+		if lineCount > maxLines {
+			findings = append(findings, a.createLargeFunctionFinding(fn, start.Filename, start.Line, end.Line, lineCount, maxLines))
+		}
 	}
-	return count
+	return findings
 }
 
-func countStmt(stmt ast.Stmt) int {
-	if stmt == nil {
-		return 0
+func (a *largeFunctionsAnalyzer) createLargeFunctionFinding(fn *ast.FuncDecl, file string, line, endLine, lineCount, maxLines int) Finding {
+	return Finding{
+		Analyzer:   a.Name(),
+		Category:   a.Category(),
+		Severity:   severityForSize(lineCount, maxLines),
+		Message:    fmt.Sprintf("%s is %d lines long (max %d)", funcLabel(fn), lineCount, maxLines),
+		File:       file,
+		Line:       line,
+		EndLine:    endLine,
+		RuleID:     "GLW-LF001",
+		Suggestion: "Agent fix: split this function by responsibility. Extract validation, query construction, loop body, switch case handling, or output formatting into private helpers until the caller is short orchestration.",
 	}
-	count := 1
-	switch s := stmt.(type) {
-	case *ast.BlockStmt:
-		for _, sub := range s.List {
-			count += countStmt(sub)
-		}
-		return count
-	case *ast.IfStmt:
-		count += countStmt(s.Body)
-		if s.Else != nil {
-			count += countStmt(s.Else)
-		}
-		return count
-	case *ast.ForStmt:
-		count += countStmt(s.Body)
-		return count
-	case *ast.RangeStmt:
-		count += countStmt(s.Body)
-		return count
-	case *ast.SwitchStmt:
-		for _, c := range s.Body.List {
-			if cc, ok := c.(*ast.CaseClause); ok {
-				for _, sub := range cc.Body {
-					count += countStmt(sub)
-				}
-			}
-		}
-		return count
-	case *ast.SelectStmt:
-		for _, c := range s.Body.List {
-			if cc, ok := c.(*ast.CommClause); ok {
-				for _, sub := range cc.Body {
-					count += countStmt(sub)
-				}
-			}
-		}
-		return count
-	}
-	return count
 }
 
 func severityForSize(lines, max int) Severity {

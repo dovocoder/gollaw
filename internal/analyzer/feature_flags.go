@@ -31,21 +31,24 @@ func (a *featureFlagsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 func (a *featureFlagsAnalyzer) checkBuildTags(ctx *Context, file *ast.File) []Finding {
 	var findings []Finding
 	for _, cg := range file.Comments {
-		text := cg.Text()
-		if strings.Contains(text, "//go:build") || strings.Contains(text, "// +build") {
-			tag := extractBuildTag(text)
-			findings = append(findings, Finding{
-				Analyzer:   a.Name(),
-				Category:   CategoryCodeSmell,
-				Severity:   SeverityInfo,
-				Message:    "file guarded by build tag: " + tag,
-				Detail:     "Functions in this file may be dead in the current build configuration.",
-				File:       ctx.FSET.Position(file.Pos()).Filename,
-				Line:       ctx.FSET.Position(cg.Pos()).Line,
-				Suggestion: "Verify that code behind this build tag is still needed",
-				RuleID:     "GLW-FF001",
-			})
+		if cg.Pos() > file.Package {
+			continue
 		}
+		tag, ok := leadingBuildTag(cg)
+		if !ok {
+			continue
+		}
+		findings = append(findings, Finding{
+			Analyzer:   a.Name(),
+			Category:   CategoryCodeSmell,
+			Severity:   SeverityInfo,
+			Message:    "file guarded by build tag: " + tag,
+			Detail:     "Functions in this file may be dead in the current build configuration.",
+			File:       ctx.FSET.Position(file.Pos()).Filename,
+			Line:       ctx.FSET.Position(cg.Pos()).Line,
+			Suggestion: "Verify that code behind this build tag is still needed",
+			RuleID:     "GLW-FF001",
+		})
 	}
 	return findings
 }
@@ -171,15 +174,15 @@ func isOperationalEnvGate(name string) bool {
 		strings.HasSuffix(upper, "_VERBOSE")
 }
 
-func extractBuildTag(commentText string) string {
-	for _, line := range strings.Split(commentText, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "//go:build") {
-			return strings.TrimPrefix(line, "//go:build")
-		}
-		if strings.HasPrefix(line, "// +build") {
-			return strings.TrimPrefix(line, "// +build")
+func leadingBuildTag(cg *ast.CommentGroup) (string, bool) {
+	for _, comment := range cg.List {
+		line := strings.TrimSpace(comment.Text)
+		switch {
+		case strings.HasPrefix(line, "//go:build"):
+			return strings.TrimSpace(strings.TrimPrefix(line, "//go:build")), true
+		case strings.HasPrefix(line, "// +build"):
+			return strings.TrimSpace(strings.TrimPrefix(line, "// +build")), true
 		}
 	}
-	return "unknown"
+	return "", false
 }

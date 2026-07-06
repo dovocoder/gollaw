@@ -55,11 +55,8 @@ func (a *duplicationAnalyzer) collectFunctionBodyBlocks(ctx *Context, minLines i
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Body == nil {
-					continue
-				}
-				if isCobraConstructor(fn) {
+				fn, ok := duplicationCandidate(decl)
+				if !ok {
 					continue
 				}
 				bodyHash, stmtCount := hashBlock(fn.Body)
@@ -89,11 +86,8 @@ func (a *duplicationAnalyzer) collectStatementWindowBlocks(ctx *Context, minLine
 	for _, files := range ctx.SyntaxByPkg {
 		for _, file := range files {
 			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Body == nil {
-					continue
-				}
-				if isCobraConstructor(fn) {
+				fn, ok := duplicationCandidate(decl)
+				if !ok {
 					continue
 				}
 				start := ctx.FSET.Position(fn.Pos())
@@ -104,6 +98,14 @@ func (a *duplicationAnalyzer) collectStatementWindowBlocks(ctx *Context, minLine
 			}
 		}
 	}
+}
+
+func duplicationCandidate(decl ast.Decl) (*ast.FuncDecl, bool) {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok || fn.Body == nil || isCobraConstructor(fn) {
+		return nil, false
+	}
+	return fn, true
 }
 
 // findDuplicates identifies hashes with more than one block and returns

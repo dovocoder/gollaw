@@ -144,7 +144,7 @@ Gollaw's own CI is available as a reusable workflow:
     fetch-depth: 0
 - uses: actions/setup-go@v5
   with:
-    go-version: '1.23'
+    go-version: '1.25'
 - run: go install github.com/dovocoder/gollaw@latest
 - run: gollaw audit --base-ref origin/main --format markdown
 ```

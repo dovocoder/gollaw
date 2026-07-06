@@ -51,51 +51,7 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 				if !ok || fn.Body == nil {
 					continue
 				}
-				// Skip cobra command constructors — they build *cobra.Command
-				// structs and their thin wrappers are by design.
-				if isCobraConstructor(fn) {
-					continue
-				}
-				// Skip error predicates (IsXxx wrapping errors.Is/As).
-				if isErrorPredicate(fn) {
-					continue
-				}
-				// Skip exported wrappers around unexported functions
-				// (e.g., Open → open). This is standard Go encapsulation.
-				if isExportedWrapperOfUnexported(fn) {
-					continue
-				}
-				// Skip logger interface implementations.
-				if isLoggerMethod(fn) {
-					continue
-				}
-				// Skip row-to-struct converters (xxxFromYyyRow → xxxFromScalars)
-				if isRowConverter(fn) {
-					continue
-				}
-				// Skip factory/config helpers (DefaultXxx, newXxxWriter)
-				if isFactoryOrConfig(fn) {
-					continue
-				}
-				// Skip cobra subcommand constructors that delegate to a shared
-				// constructor (e.g., newGroupsAnnounceOnlyCmd → newGroupsToggleCmd)
-				if isCobraSubcommandConstructor(fn) {
-					continue
-				}
-				// Skip default-parameter wrappers (sendTextMessage → sendTextMessageWithSender)
-				if isDefaultParameterWrapper(fn) {
-					continue
-				}
-				if bindsDefaultArgument(fn) {
-					continue
-				}
-				// Skip semantic aliases (FileURI → String, canonicalJIDString → String)
-				if isSemanticAlias(fn) {
-					continue
-				}
-				// Skip very short functions (< 3 statements).
-				stmts := fn.Body.List
-				if len(stmts) < 1 || len(stmts) > 3 {
+				if shouldSkipThinWrapperCandidate(fn) {
 					continue
 				}
 				fns = append(fns, fn)
@@ -103,6 +59,23 @@ func (a *thinWrapperAnalyzer) collectFunctions(ctx *Context) []*ast.FuncDecl {
 		}
 	}
 	return fns
+}
+
+func shouldSkipThinWrapperCandidate(fn *ast.FuncDecl) bool {
+	if isCobraConstructor(fn) ||
+		isErrorPredicate(fn) ||
+		isExportedWrapperOfUnexported(fn) ||
+		isLoggerMethod(fn) ||
+		isRowConverter(fn) ||
+		isFactoryOrConfig(fn) ||
+		isCobraSubcommandConstructor(fn) ||
+		isDefaultParameterWrapper(fn) ||
+		bindsDefaultArgument(fn) ||
+		isSemanticAlias(fn) {
+		return true
+	}
+	stmtCount := len(fn.Body.List)
+	return stmtCount < 1 || stmtCount > 3
 }
 
 // isErrorPredicate returns true if the function is named IsXxx/isXxx and its
@@ -193,41 +166,47 @@ func isExportedWrapperOfUnexported(fn *ast.FuncDecl) bool {
 // which are semantic aliases for log/warning levels.
 func isLoggerMethod(fn *ast.FuncDecl) bool {
 	name := fn.Name.Name
-	switch name {
-	case "Errorf", "Warnf", "Infof", "Debugf", "Tracef",
-		"Error", "Warn", "Info", "Debug", "Trace",
-		"Fatal", "Fatalf", "Panic", "Panicf",
-		"Print", "Printf", "Println":
+	if loggerMethodNames[name] {
 		return true
 	}
-	// Match emit/warning delegate methods — functions whose name contains
-	// "emit" or "warning" that delegate to another emit/warning function.
-	// e.g., emitChatStateWarning → a.emitWarning
-	if strings.Contains(strings.ToLower(name), "emit") ||
-		strings.Contains(strings.ToLower(name), "warning") {
-		if fn.Body == nil {
+	lowerName := strings.ToLower(name)
+	if !strings.Contains(lowerName, "emit") && !strings.Contains(lowerName, "warning") {
+		return false
+	}
+	return callsEmitOrWarning(fn.Body)
+}
+
+var loggerMethodNames = map[string]bool{
+	"Errorf": true, "Warnf": true, "Infof": true, "Debugf": true, "Tracef": true,
+	"Error": true, "Warn": true, "Info": true, "Debug": true, "Trace": true,
+	"Fatal": true, "Fatalf": true, "Panic": true, "Panicf": true,
+	"Print": true, "Printf": true, "Println": true,
+}
+
+func callsEmitOrWarning(body *ast.BlockStmt) bool {
+	if body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		called := strings.ToLower(sel.Sel.Name)
+		if strings.Contains(called, "emit") ||
+			strings.Contains(called, "warning") ||
+			strings.Contains(called, "warn") {
+			found = true
 			return false
 		}
-		var foundEmit bool
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-					called := strings.ToLower(sel.Sel.Name)
-					if strings.Contains(called, "emit") ||
-						strings.Contains(called, "warning") ||
-						strings.Contains(called, "warn") {
-						foundEmit = true
-						return false
-					}
-				}
-			}
-			return true
-		})
-		if foundEmit {
-			return true
-		}
-	}
-	return false
+		return true
+	})
+	return found
 }
 
 // isRowConverter returns true if the function name matches the pattern

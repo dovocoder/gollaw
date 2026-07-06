@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -13,9 +14,11 @@ type dependencyAnalyzer struct{}
 
 func newDependencyAnalyzer() *dependencyAnalyzer { return &dependencyAnalyzer{} }
 
-func (a *dependencyAnalyzer) Name() string        { return "dependencies" }
-func (a *dependencyAnalyzer) Category() Category  { return categoryDependencies }
-func (a *dependencyAnalyzer) Description() string { return "Import graph cycles and dependency hygiene" }
+func (a *dependencyAnalyzer) Name() string       { return "dependencies" }
+func (a *dependencyAnalyzer) Category() Category { return categoryDependencies }
+func (a *dependencyAnalyzer) Description() string {
+	return "Import graph cycles and dependency hygiene"
+}
 
 func (a *dependencyAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	adj := buildImportGraph(ctx)
@@ -70,12 +73,12 @@ func (a *dependencyAnalyzer) createCycleFinding(ctx *Context, cycle []string) Fi
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityCritical,
-		Message:     fmt.Sprintf("import cycle: %s", strings.Join(cycle, " → ")),
-		Detail:      fmt.Sprintf("cycle length: %d packages", len(cycle)),
-		File:        pkgFile(ctx, cycle[0]),
-		Line:        1,
-		RuleID:      "GLW-DE001",
-		Suggestion:  "Break the cycle by extracting shared code into a lower-level package, or using interfaces to invert the dependency.",
+		Message:    fmt.Sprintf("import cycle: %s", strings.Join(cycle, " → ")),
+		Detail:     fmt.Sprintf("cycle length: %d packages", len(cycle)),
+		File:       pkgFile(ctx, cycle[0]),
+		Line:       1,
+		RuleID:     "GLW-DE001",
+		Suggestion: "Break the cycle by extracting shared code into a lower-level package, or using interfaces to invert the dependency.",
 	}
 }
 
@@ -86,9 +89,21 @@ func (a *dependencyAnalyzer) findHighFanOutFindings(ctx *Context, adj map[string
 		if len(deps) <= 20 {
 			continue
 		}
+		if isCommandRouterPackage(pkgPath) {
+			continue
+		}
 		findings = append(findings, a.createHighFanOutFinding(ctx, pkgPath, len(deps)))
 	}
 	return findings
+}
+
+func isCommandRouterPackage(pkgPath string) bool {
+	switch path.Base(pkgPath) {
+	case "cli", "cmd", "command", "commands":
+		return true
+	default:
+		return false
+	}
 }
 
 // createHighFanOutFinding builds a Finding for a package with high fan-out.
@@ -97,11 +112,11 @@ func (a *dependencyAnalyzer) createHighFanOutFinding(ctx *Context, pkgPath strin
 		Analyzer:   a.Name(),
 		Category:   a.Category(),
 		Severity:   SeverityWarning,
-		Message:     fmt.Sprintf("package %s imports %d internal packages", pkgPath, depCount),
-		File:        pkgFile(ctx, pkgPath),
-		Line:        1,
-		RuleID:      "GLW-DE002",
-		Suggestion:  "High fan-out may indicate this package has too many responsibilities. Consider splitting it.",
+		Message:    fmt.Sprintf("package %s imports %d internal packages", pkgPath, depCount),
+		File:       pkgFile(ctx, pkgPath),
+		Line:       1,
+		RuleID:     "GLW-DE002",
+		Suggestion: "High fan-out may indicate this package has too many responsibilities. Consider splitting it.",
 	}
 }
 
