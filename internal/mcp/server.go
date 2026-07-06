@@ -35,7 +35,7 @@ import (
 const protocolVersion = "2024-11-05"
 
 // mcpVersion is the MCP server version (mirrors cli.Version to avoid an import cycle).
-const mcpVersion = "0.2.0"
+const mcpVersion = "0.3.0"
 
 // ServeMCP runs the MCP server loop over the given reader/writer (typically stdio).
 func ServeMCP(in io.Reader, out io.Writer) error {
@@ -256,7 +256,7 @@ func (s *server) toolAnalyze(id json.RawMessage, args json.RawMessage) {
 			Decls:     result.Stats.DeclCount,
 		}
 	}
-	rep := reporter.BuildReport("0.1.0", p.Patterns, nil, stats, findings)
+	rep := reporter.BuildReport(mcpVersion, p.Patterns, nil, stats, findings)
 
 	s.sendToolJSON(id, rep)
 }
@@ -361,7 +361,7 @@ func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
 		return
 	}
 
-	rep := reporter.BuildReport("0.1.0", []string{"./..."}, nil, reporter.CodebaseStats{}, findings)
+	rep := reporter.BuildReport(mcpVersion, []string{"./..."}, nil, reporter.CodebaseStats{}, findings)
 	health := rep.HealthScore
 	data, _ := json.MarshalIndent(map[string]interface{}{
 		"score":         health.Score,

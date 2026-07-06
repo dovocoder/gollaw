@@ -40,10 +40,10 @@ import (
 	"github.com/dovocoder/gollaw/internal/xref"
 )
 
-// Version is set at build time via -ldflags "-X github.com/dovocoder/gollaw/internal/cli.Version=v0.2.0".
+// Version is set at build time via -ldflags "-X github.com/dovocoder/gollaw/internal/cli.Version=0.3.0".
 //
 //gollaw:ignore api-surface
-var Version = "0.2.0-dev"
+var Version = "0.3.0-dev"
 
 // Run is the main CLI entry point.
 func Run(args []string) int {

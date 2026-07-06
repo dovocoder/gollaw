@@ -246,7 +246,7 @@ func (s *server) handleInitialize(id json.RawMessage, params json.RawMessage) {
 		},
 		ServerInfo: serverInfo{
 			Name:    "gollaw",
-			Version: "0.1.0",
+			Version: "0.3.0",
 		},
 	}
 	s.sendResponse(id, result)

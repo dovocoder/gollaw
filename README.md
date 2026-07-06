@@ -58,7 +58,7 @@ Download from [GitHub Releases](https://github.com/dovocoder/gollaw/releases):
 
 ```bash
 # Linux/macOS
-tar xzf gollaw_0.2.0_linux_amd64.tar.gz
+tar xzf gollaw_0.3.0_linux_amd64.tar.gz
 sudo mv gollaw /usr/local/bin/
 gollaw version
 ```
@@ -387,7 +387,7 @@ Re-runs analysis on file changes.
 ### Text (default)
 
 ```
-Gollaw v0.2.0 — 2026-07-05T12:00:00Z
+Gollaw v0.3.0 — 2026-07-06T12:00:00Z
 Patterns: ./...
 
 ▸ /path/to/file.go
@@ -405,7 +405,7 @@ gollaw analyze . --format json
 ```json
 {
   "tool": "gollaw",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "timestamp": "2026-07-05T12:00:00Z",
   "patterns": ["./..."],
   "stats": { "packages": 32, "files": 74, "functions": 853 },

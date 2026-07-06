@@ -11,7 +11,7 @@ import (
 )
 
 // actionVersion is set at build time via -ldflags to avoid an import cycle with internal/cli.
-var actionVersion = "0.2.0-dev"
+var actionVersion = "0.3.0-dev"
 
 // FormatPRComment formats an audit report as a GitHub PR comment in markdown.
 // The auditReport should be a *reporter.Report.

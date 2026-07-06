@@ -79,7 +79,7 @@ jobs:
 ```yaml
 - name: Install Gollaw
   run: |
-    curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw-v0.2.0-linux-amd64.tar.gz | tar xz
+    curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw_0.3.0_linux_amd64.tar.gz | tar xz
     sudo mv gollaw /usr/local/bin/
 ```
 

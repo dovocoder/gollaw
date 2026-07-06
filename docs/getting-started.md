@@ -21,11 +21,11 @@ See [Releases](https://github.com/dovocoder/gollaw/releases) for prebuilt binari
 
 ```bash
 # Linux amd64
-curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw-v0.2.0-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw_0.3.0_linux_amd64.tar.gz | tar xz
 sudo mv gollaw /usr/local/bin/
 
 # macOS Apple Silicon
-curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw-v0.2.0-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/dovocoder/gollaw/releases/latest/download/gollaw_0.3.0_darwin_arm64.tar.gz | tar xz
 sudo mv gollaw /usr/local/bin/
 ```
 
@@ -46,7 +46,7 @@ gollaw analyze .
 
 Output:
 ```
-Gollaw v0.2.0 — 2026-07-05T12:00:00Z
+Gollaw v0.3.0 — 2026-07-06T12:00:00Z
 Patterns: ./...
 Analyzers: deadcode, unused, complexity, duplication, dependencies, ...
 
