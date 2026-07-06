@@ -59,7 +59,7 @@ func (a *largeFunctionsAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 						Line:       start.Line,
 						EndLine:    end.Line,
 						RuleID:     "GLW-LF001",
-						Suggestion: "Extract logic into smaller helper functions. Long functions are hard to test, review, and maintain.",
+						Suggestion: "Agent fix: split this function by responsibility. Extract validation, query construction, loop body, switch case handling, or output formatting into private helpers until the caller is short orchestration.",
 					})
 				}
 			}

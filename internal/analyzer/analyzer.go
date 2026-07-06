@@ -78,6 +78,7 @@ func NewRegistry() *registry {
 	r.Register(newChurnAnalyzer())
 	r.Register(newBoundaryCoverageAnalyzer())
 	r.Register(newFeatureFlagsAnalyzer())
+	r.Register(newSelfRecursionAnalyzer())
 	r.Register(newUnusedMembersAnalyzer())
 	r.Register(newReExportCyclesAnalyzer())
 	r.Register(newUnusedOverridesAnalyzer())

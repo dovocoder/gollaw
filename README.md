@@ -353,7 +353,7 @@ Re-runs analysis on file changes.
 
 ---
 
-## Analyzers (21)
+## Analyzers (22)
 
 | Analyzer | ID | Description |
 |----------|-----|-------------|
@@ -370,6 +370,7 @@ Re-runs analysis on file changes.
 | `naming` | GLW-NM001 | Go naming convention violations |
 | `unused-files` | GLW-UF001 | Orphaned Go files not part of any package |
 | `thin-wrappers` | GLW-TW001 | Functions that only delegate to another function |
+| `self-recursion` | GLW-SR001 | Functions that immediately recurse into themselves |
 | `churn` | GLW-CH001 | Files with high git commit churn |
 | `boundary-coverage` | GLW-BC001 | Exported functions without boundary tests |
 | `feature-flags` | GLW-FF001 | Hardcoded feature flag values |

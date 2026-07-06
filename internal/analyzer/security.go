@@ -218,7 +218,7 @@ func (a *securityAnalyzer) checkSQLInjection(ctx *Context, file *ast.File, info 
 			File:       pos.Filename,
 			Line:       pos.Line,
 			RuleID:     "GLW-SC030",
-			Suggestion: "Use bind parameters for values. For SQL identifiers, validate against a strict allow-list and quote the identifier.",
+			Suggestion: "Agent fix: move dynamic values into bind parameters. If the dynamic part is a table or column name, replace free-form input with a strict allow-list function that returns fixed quoted SQL fragments.",
 		})
 		return true
 	})

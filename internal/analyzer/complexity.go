@@ -86,7 +86,7 @@ func (a *complexityAnalyzer) createCyclomaticFinding(ctx *Context, fn *ast.FuncD
 		Line:       line,
 		EndLine:    endLine,
 		RuleID:     "GLW-CX001",
-		Suggestion: "Break this function into smaller helpers. High cyclomatic complexity makes testing and maintenance harder.",
+		Suggestion: "Agent fix: extract one decision cluster into a named helper, usually a switch/case handler, validation block, or early-return guard path. Keep behavior unchanged and add or update focused tests for the extracted path.",
 	}
 }
 
@@ -103,7 +103,7 @@ func (a *complexityAnalyzer) createCognitiveFinding(ctx *Context, fn *ast.FuncDe
 		Line:       line,
 		EndLine:    endLine,
 		RuleID:     "GLW-CX002",
-		Suggestion: "Simplify the nesting or extract sub-expressions. High cognitive complexity makes the function hard to read.",
+		Suggestion: "Agent fix: reduce nesting with early returns, then extract the deepest branch or loop body into a named helper. Keep the original function as orchestration and add or update focused tests for the moved branch.",
 	}
 }
 

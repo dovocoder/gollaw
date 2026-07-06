@@ -39,7 +39,7 @@ func parseArgs[T any](args json.RawMessage) T {
 
 Supported analyzers: `deadcode`, `unused`, `complexity`, `duplication`, `dependencies`,
 `architecture`, `unused-deps`, `large-functions`, `hotspots`, `security`, `naming`,
-`unused-files`, `thin-wrappers`, `churn`, `boundary-coverage`, `feature-flags`,
+`unused-files`, `thin-wrappers`, `self-recursion`, `churn`, `boundary-coverage`, `feature-flags`,
 `unused-members`, `re-export-cycles`, `unused-overrides`, `dead-flags`, `api-surface`.
 
 ## `//gollaw:ignore-all`

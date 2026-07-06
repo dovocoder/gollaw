@@ -88,6 +88,13 @@ Detects functions that only delegate to a single other function (one-line wrappe
 - **Severity:** `info`
 - **Fix:** Inline the wrapper or remove it.
 
+### self-recursion (GLW-SR001)
+
+Detects functions whose first executable statement calls the same function before any guard or base case can run.
+
+- **Severity:** `critical`
+- **Fix:** Replace the call with the intended helper, field access, or delegated receiver. If recursion is intentional, move it behind an explicit base-case guard.
+
 ---
 
 ## Duplication

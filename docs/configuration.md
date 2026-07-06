@@ -115,6 +115,7 @@ severity:
 | GLW-NM001 | naming | info |
 | GLW-UF001 | unused-files | warning |
 | GLW-TW001 | thin-wrappers | info |
+| GLW-SR001 | self-recursion | critical |
 | GLW-CH001 | churn | info |
 | GLW-BC001 | boundary-coverage | info |
 | GLW-FF001 | feature-flags | info |

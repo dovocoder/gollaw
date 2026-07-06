@@ -635,7 +635,7 @@ func (a *thinWrapperAnalyzer) createThinWrapperFinding(ctx *Context, fn *ast.Fun
 		Line:       pos.Line,
 		EndLine:    ctx.FSET.Position(fn.End()).Line,
 		RuleID:     "GLW-TW001",
-		Suggestion: "Consider inlining the call or removing this wrapper if it adds no semantic value.",
+		Suggestion: "Agent fix: inline this function at call sites, or keep it only if it adds validation, naming value, defaults, interface conformance, or a stable exported API boundary.",
 	}
 }
 
