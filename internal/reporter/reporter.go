@@ -124,8 +124,8 @@ func BuildReport(
 	}
 }
 
-// SeverityWeights returns the per-severity penalty weights used for health scoring.
-func SeverityWeights() map[analyzer.Severity]int {
+// severityWeights returns the per-severity penalty weights used for health scoring.
+func severityWeights() map[analyzer.Severity]int {
 	return map[analyzer.Severity]int{
 		analyzer.SeverityCritical: 25,
 		analyzer.SeverityWarning:  8,
@@ -136,7 +136,7 @@ func SeverityWeights() map[analyzer.Severity]int {
 
 // ComputePenalty sums the severity weights for all findings.
 func ComputePenalty(findings []analyzer.Finding) int {
-	weights := SeverityWeights()
+	weights := severityWeights()
 	penalty := 0
 	for _, f := range findings {
 		penalty += weights[f.Severity]
@@ -156,7 +156,7 @@ func ScoreFromPenalty(penalty int) int {
 // computeHealthScore derives a 0-100 score from findings.
 // Weighted: critical findings hurt the most, hints barely matter.
 func computeHealthScore(findings []analyzer.Finding) HealthScore {
-	weights := SeverityWeights()
+	weights := severityWeights()
 	byCategory := make(map[string]int)
 	penalty := 0
 	for _, f := range findings {

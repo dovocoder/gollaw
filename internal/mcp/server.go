@@ -72,9 +72,9 @@ type clientInfo struct {
 }
 
 type initializeResult struct {
-	ProtocolVersion string          `json:"protocolVersion"`
-	Capabilities    serverCaps      `json:"capabilities"`
-	ServerInfo      serverInfo      `json:"serverInfo"`
+	ProtocolVersion string     `json:"protocolVersion"`
+	Capabilities    serverCaps `json:"capabilities"`
+	ServerInfo      serverInfo `json:"serverInfo"`
 }
 
 type serverCaps struct {
@@ -150,14 +150,15 @@ func (s *server) run() error {
 // ─── Message framing ───────────────────────────────────────────────────
 
 // ─── JSON-RPC delegation ───────────────────────────────────────────────
+//
 //gollaw:ignore thin-wrappers
-func (s *server) readMessage() ([]byte, error)  { return s.conn.ReadMessage() }
-//gollaw:ignore thin-wrappers
-func (s *server) writeMessage(data []byte) error { return s.conn.WriteMessage(data) }
+func (s *server) readMessage() ([]byte, error) { return s.conn.ReadMessage() }
+
 //gollaw:ignore thin-wrappers
 func (s *server) sendResponse(id json.RawMessage, result interface{}) {
 	s.conn.SendResponse(id, result)
 }
+
 //gollaw:ignore thin-wrappers
 func (s *server) sendError(id json.RawMessage, code int, message string) {
 	s.conn.SendError(id, code, message)
@@ -363,9 +364,9 @@ func (s *server) toolHealth(id json.RawMessage, args json.RawMessage) {
 	rep := reporter.BuildReport("0.1.0", []string{"./..."}, nil, reporter.CodebaseStats{}, findings)
 	health := rep.HealthScore
 	data, _ := json.MarshalIndent(map[string]interface{}{
-		"score":      health.Score,
-		"grade":      health.Grade,
-		"byCategory": health.ByCategory,
+		"score":         health.Score,
+		"grade":         health.Grade,
+		"byCategory":    health.ByCategory,
 		"totalFindings": len(findings),
 	}, "", "  ")
 	s.sendResponse(id, callToolResult{
@@ -503,9 +504,9 @@ func (s *server) toolBaselineDiff(id json.RawMessage, args json.RawMessage) {
 	newFindings := baseline.Diff(bl, findings)
 	data, _ := json.MarshalIndent(map[string]interface{}{
 		"baselineCount": len(bl),
-		"currentCount":   len(findings),
-		"newFindings":    newFindings,
-		"newCount":       len(newFindings),
+		"currentCount":  len(findings),
+		"newFindings":   newFindings,
+		"newCount":      len(newFindings),
 	}, "", "  ")
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: string(data)}},
@@ -658,14 +659,14 @@ func (s *server) inspectFile(ctx *analyzer.Context, findings []analyzer.Finding,
 	score := fileHealthScore(fileFindings, target)
 
 	return map[string]interface{}{
-		"kind":        "file",
-		"target":      target,
-		"absPath":     absTarget,
-		"package":     pkgPath,
-		"exists":      fileExists(target),
-		"findings":    fileFindings,
+		"kind":         "file",
+		"target":       target,
+		"absPath":      absTarget,
+		"package":      pkgPath,
+		"exists":       fileExists(target),
+		"findings":     fileFindings,
 		"findingCount": len(fileFindings),
-		"healthScore": score,
+		"healthScore":  score,
 	}
 }
 
@@ -719,7 +720,7 @@ func (s *server) inspectSymbol(ctx *analyzer.Context, findings []analyzer.Findin
 	symbolInfo := map[string]interface{}{
 		"kind":     "symbol",
 		"target":   target,
-		"findings":  []analyzer.Finding{},
+		"findings": []analyzer.Finding{},
 	}
 
 	if expl != nil {
@@ -836,13 +837,13 @@ func (s *server) toolProjectInfo(id json.RawMessage, args json.RawMessage) {
 	depCount := countGoModDeps(dir)
 
 	info := map[string]interface{}{
-		"moduleName":    moduleName,
-		"goVersion":      goVersion,
-		"packageCount":   result.Stats.PackageCount,
-		"fileCount":      result.Stats.FileCount,
-		"functionCount":  result.Stats.FunctionCount,
-		"typeCount":      result.Stats.TypeCount,
-		"declCount":      result.Stats.DeclCount,
+		"moduleName":      moduleName,
+		"goVersion":       goVersion,
+		"packageCount":    result.Stats.PackageCount,
+		"fileCount":       result.Stats.FileCount,
+		"functionCount":   result.Stats.FunctionCount,
+		"typeCount":       result.Stats.TypeCount,
+		"declCount":       result.Stats.DeclCount,
 		"dependencyCount": depCount,
 	}
 
@@ -867,11 +868,11 @@ func (s *server) toolCheckChanged(id json.RawMessage, args json.RawMessage) {
 	changedFindings := filterFindingsByFiles(findings, changedSet)
 
 	data, _ := json.MarshalIndent(map[string]interface{}{
-		"baseRef":           baseRef,
-		"changedFiles":      changedFiles,
-		"changedFileCount":  len(changedFiles),
-		"findings":          changedFindings,
-		"findingCount":      len(changedFindings),
+		"baseRef":          baseRef,
+		"changedFiles":     changedFiles,
+		"changedFileCount": len(changedFiles),
+		"findings":         changedFindings,
+		"findingCount":     len(changedFindings),
 	}, "", "  ")
 	s.sendResponse(id, callToolResult{
 		Content: []contentBlock{{Type: "text", Text: string(data)}},
@@ -997,6 +998,7 @@ func (s *server) toolFixPreview(id json.RawMessage, args json.RawMessage) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 // sendToolError sends an error response for a tool call.
+//
 //gollaw:ignore thin-wrappers
 func (s *server) sendToolError(id json.RawMessage, err error) {
 	s.sendResponse(id, callToolResult{
@@ -1191,4 +1193,3 @@ func countGoModDeps(dir string) int {
 	}
 	return count
 }
-

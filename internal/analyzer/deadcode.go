@@ -20,15 +20,18 @@ import (
 //     from ssaPkg.Members — causing silent edge drops.
 //   - We walk SSA instructions directly, which handles intra-package calls,
 //     closures, and anonymous functions correctly.
-//   - Methods are seeded as entry points because they may be called via
-//     interface dispatch, which static call analysis cannot track.
+//   - Only exported API methods are seeded as entry points. Unexported
+//     methods must be reached by an actual call or function value reference;
+//     this makes the analyzer strict enough to catch private method drift.
 type deadCodeAnalyzer struct{}
 
 func newDeadCodeAnalyzer() *deadCodeAnalyzer { return &deadCodeAnalyzer{} }
 
-func (a *deadCodeAnalyzer) Name() string        { return "deadcode" }
-func (a *deadCodeAnalyzer) Category() Category   { return CategoryDeadCode }
-func (a *deadCodeAnalyzer) Description() string   { return "Detects unreachable functions via SSA instruction analysis" }
+func (a *deadCodeAnalyzer) Name() string       { return "deadcode" }
+func (a *deadCodeAnalyzer) Category() Category { return CategoryDeadCode }
+func (a *deadCodeAnalyzer) Description() string {
+	return "Detects unreachable functions via SSA instruction analysis"
+}
 
 func (a *deadCodeAnalyzer) Analyze(ctx *Context) ([]Finding, error) {
 	if ctx.SSA == nil {
@@ -113,10 +116,13 @@ func (a *deadCodeAnalyzer) buildReachableSet(allFns map[string]*ssa.Function) ma
 	var queue []*ssa.Function
 
 	addEntry := func(fn *ssa.Function) {
-		key := fn.String()
+		key, ok := knownFunctionKey(allFns, fn)
+		if !ok {
+			return
+		}
 		if !reachable[key] {
 			reachable[key] = true
-			queue = append(queue, fn)
+			queue = append(queue, allFns[key])
 		}
 	}
 
@@ -132,8 +138,8 @@ func (a *deadCodeAnalyzer) buildReachableSet(allFns map[string]*ssa.Function) ma
 	return reachable
 }
 
-// seedEntryPoints marks main, init, exported, and method functions as
-// initial entry points.
+// seedEntryPoints marks main, init, exported functions, and exported API
+// methods as initial entry points.
 func (a *deadCodeAnalyzer) seedEntryPoints(allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
 	for _, fn := range allFns {
 		if fn.Name() == "main" || fn.Name() == "init" {
@@ -143,10 +149,6 @@ func (a *deadCodeAnalyzer) seedEntryPoints(allFns map[string]*ssa.Function, addE
 		if isExportedSSA(fn) {
 			addEntry(fn)
 			continue
-		}
-		// Method on any type — could be called via interface dispatch.
-		if fn.Signature != nil && fn.Signature.Recv() != nil {
-			addEntry(fn)
 		}
 	}
 }
@@ -169,14 +171,7 @@ func (a *deadCodeAnalyzer) scanSSAInstructions(fn *ssa.Function, allFns map[stri
 // closure creation, and function values stored in variables/structs.
 func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
 	if callee := extractStaticCallee(instr); callee != nil {
-		// Check both the callee itself and its origin (for generic instantiations).
-		if _, exists := allFns[callee.String()]; exists {
-			addEntry(callee)
-		} else if origin := callee.Origin(); origin != nil {
-			if _, exists := allFns[origin.String()]; exists {
-				addEntry(origin)
-			}
-		}
+		addEntry(callee)
 	}
 	// Check for function values passed as call arguments (e.g.,
 	// defaultStoreDirFor(..., pathExists)). The SSA represents this as
@@ -184,49 +179,102 @@ func (a *deadCodeAnalyzer) processInstruction(instr ssa.Instruction, allFns map[
 	if call, ok := instr.(*ssa.Call); ok {
 		for _, arg := range call.Common().Args {
 			if fn, ok := arg.(*ssa.Function); ok {
-				if _, exists := allFns[fn.String()]; exists {
-					addEntry(fn)
-				}
+				addEntry(fn)
 			}
 		}
 	}
 	a.scanClosure(instr, allFns, addEntry, visited)
-	a.scanFunctionValues(instr, allFns, addEntry)
+	a.scanFunctionOperands(instr, allFns, addEntry, visited)
 }
 
-// scanFunctionValues checks for function values referenced in Store,
-// ChangeInterface, and other instructions that don't involve a direct
-// call. This catches patterns like:
+// scanFunctionOperands checks for function values referenced by any SSA
+// instruction operand. This catches patterns like:
 //
 //	var migrations = []migration{{up: migrateFoo}}
 //	rootCmd.AddCommand(newFooCmd())
 //
 // where the function is referenced as a value, not called directly.
-func (a *deadCodeAnalyzer) scanFunctionValues(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function)) {
-	// Check Store instructions: *t = someFunction
-	if store, ok := instr.(*ssa.Store); ok {
-		if fn, ok := store.Val.(*ssa.Function); ok {
-			if _, exists := allFns[fn.String()]; exists {
-				addEntry(fn)
-			}
+func (a *deadCodeAnalyzer) scanFunctionOperands(instr ssa.Instruction, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
+	for _, operand := range instr.Operands(nil) {
+		if operand == nil || *operand == nil {
+			continue
+		}
+		fn, ok := (*operand).(*ssa.Function)
+		if !ok {
+			continue
+		}
+		if _, ok := knownFunctionKey(allFns, fn); ok {
+			addEntry(fn)
+			continue
+		}
+		a.scanSyntheticFunction(fn, allFns, addEntry, visited)
+	}
+}
+
+func (a *deadCodeAnalyzer) scanSyntheticFunction(fn *ssa.Function, allFns map[string]*ssa.Function, addEntry func(*ssa.Function), visited map[string]bool) {
+	key := fn.String()
+	if visited[key] {
+		return
+	}
+	visited[key] = true
+	a.scanSSAInstructions(fn, allFns, addEntry, visited)
+}
+
+// knownFunctionKey maps an SSA callee back to the function instance collected
+// from the package. Static method calls and generic instantiations can use a
+// different SSA wrapper than the method-set member; matching by semantic
+// identity keeps dispatch tables reachable without re-seeding every method.
+func knownFunctionKey(allFns map[string]*ssa.Function, fn *ssa.Function) (string, bool) {
+	if fn == nil {
+		return "", false
+	}
+	if _, exists := allFns[fn.String()]; exists {
+		return fn.String(), true
+	}
+	if origin := fn.Origin(); origin != nil {
+		if _, exists := allFns[origin.String()]; exists {
+			return origin.String(), true
+		}
+		if key, ok := matchingFunctionKey(allFns, origin); ok {
+			return key, true
 		}
 	}
-	// Check ChangeInterface instructions (function → interface{})
-	if ci, ok := instr.(*ssa.ChangeInterface); ok {
-		if fn, ok := ci.X.(*ssa.Function); ok {
-			if _, exists := allFns[fn.String()]; exists {
-				addEntry(fn)
-			}
+	return matchingFunctionKey(allFns, fn)
+}
+
+func matchingFunctionKey(allFns map[string]*ssa.Function, fn *ssa.Function) (string, bool) {
+	target, ok := functionIdentity(fn)
+	if !ok {
+		return "", false
+	}
+	for key, candidate := range allFns {
+		id, ok := functionIdentity(candidate)
+		if ok && id == target {
+			return key, true
 		}
 	}
-	// Check MakeInterface instructions (function → interface{})
-	if mi, ok := instr.(*ssa.MakeInterface); ok {
-		if fn, ok := mi.X.(*ssa.Function); ok {
-			if _, exists := allFns[fn.String()]; exists {
-				addEntry(fn)
-			}
-		}
+	return "", false
+}
+
+type functionID struct {
+	pkgPath string
+	recv    string
+	name    string
+}
+
+func functionIdentity(fn *ssa.Function) (functionID, bool) {
+	if fn == nil || fn.Object() == nil {
+		return functionID{}, false
 	}
+	obj := fn.Object()
+	id := functionID{name: obj.Name()}
+	if obj.Pkg() != nil {
+		id.pkgPath = obj.Pkg().Path()
+	}
+	if sig, ok := obj.Type().(*types.Signature); ok && sig.Recv() != nil {
+		id.recv = recvTypeName(sig.Recv().Type())
+	}
+	return id, id.pkgPath != "" && id.name != ""
 }
 
 // scanClosure checks if an instruction creates a closure and, if so,
@@ -244,8 +292,7 @@ func (a *deadCodeAnalyzer) scanClosure(instr ssa.Instruction, allFns map[string]
 	if visited[closureKey] {
 		return
 	}
-	visited[closureKey] = true
-	a.scanSSAInstructions(closureFn, allFns, addEntry, visited)
+	a.scanSyntheticFunction(closureFn, allFns, addEntry, visited)
 }
 
 // extractStaticCallee returns the statically-known callee function from a
@@ -287,15 +334,15 @@ func (a *deadCodeAnalyzer) createFindings(ctx *Context, deadFns []*ssa.Function)
 	for _, fn := range deadFns {
 		pos := ctx.FSET.Position(fn.Pos())
 		findings = append(findings, Finding{
-			Analyzer:  a.Name(),
-			Category:  a.Category(),
-			Severity:  SeverityWarning,
+			Analyzer:   a.Name(),
+			Category:   a.Category(),
+			Severity:   SeverityWarning,
 			Message:    fmt.Sprintf("unreachable function %s", cleanFuncName(fn)),
 			File:       pos.Filename,
 			Line:       pos.Line,
 			EndLine:    pos.Line,
 			RuleID:     "GLW-DC001",
-			Suggestion: "Remove this function or add a caller. If it is used via reflection or interface dispatch, add a //gollaw:keep comment.",
+			Suggestion: "Agent fix: remove this function, add a real caller, or wire it through a concrete interface, command, or registration path. Do not suppress it unless runtime reflection is proven.",
 		})
 	}
 	return findings
@@ -315,16 +362,14 @@ func isExportedSSA(fn *ssa.Function) bool {
 	return false
 }
 
-func recvTypeName(t interface{}) string {
-	if n, ok := t.(interface {
-		Obj() interface{ Name() string }
-	}); ok {
-		return n.Obj().Name()
-	}
-	if p, ok := t.(interface {
-		Elem() interface{}
-	}); ok {
-		return recvTypeName(p.Elem())
+func recvTypeName(t types.Type) string {
+	switch typ := t.(type) {
+	case *types.Pointer:
+		return recvTypeName(typ.Elem())
+	case *types.Named:
+		if typ.Obj() != nil {
+			return typ.Obj().Name()
+		}
 	}
 	return ""
 }
